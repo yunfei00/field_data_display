@@ -48,6 +48,13 @@ class DataViewer(QWidget):
         self.load_config()
 
     @staticmethod
+    def _format_frequency(freq_hz):
+        """将频率格式化为易读单位：小于 1GHz 使用 MHz。"""
+        if abs(freq_hz) < 1e9:
+            return f"{freq_hz / 1e6:g} MHz"
+        return f"{freq_hz / 1e9:g} GHz"
+
+    @staticmethod
     def _validate_loaded_data(data_dict):
         """校验多个方向数据的列和行标签是否一致。"""
         if not data_dict:
@@ -432,7 +439,7 @@ class DataViewer(QWidget):
             im = ax.imshow(data, aspect='auto')
             self.fig.colorbar(im, ax=ax)
             ax.set_title(t)
-        self.fig.suptitle(f"{sel_dir}方向 @ {freq_val/1e9:.3f} GHz")
+        self.fig.suptitle(f"{sel_dir}方向 @ {self._format_frequency(freq_val)}")
         self.canvas.draw()
 
     def update_plot_amplitude(self, idx, sel_dir, freq_val):
@@ -468,7 +475,7 @@ class DataViewer(QWidget):
         im = ax.imshow(amp_grid, aspect='auto')
         self.fig.colorbar(im, ax=ax)
         ax.set_title("幅度")
-        self.fig.suptitle(f"{sel_dir}方向 @ {freq_val / 1e9:.3f} GHz")
+        self.fig.suptitle(f"{sel_dir}方向 @ {self._format_frequency(freq_val)}")
         self.canvas.draw()
 
     def refresh_direction_options(self):
