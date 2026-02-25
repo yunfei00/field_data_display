@@ -116,6 +116,50 @@ class DataViewer(QWidget):
             return side, side
         return 1, n
 
+    @staticmethod
+    def _extract_xy(label):
+        """从标签解析坐标，返回 (x, y)，失败返回 None。"""
+        text = str(label)
+        parts = text.split("_")
+
+        if len(parts) >= 2:
+            try:
+                return int(parts[0]), int(parts[1])
+            except ValueError:
+                pass
+
+        x_match = re.search(r"(?:^|_)x(-?\d+)(?:_|$)", text, re.IGNORECASE)
+        y_match = re.search(r"(?:^|_)y(-?\d+)(?:_|$)", text, re.IGNORECASE)
+        if x_match and y_match:
+            return int(x_match.group(1)), int(y_match.group(1))
+        return None
+
+    def _values_to_grid(self, labels, values):
+        """按标签中的坐标将一维值重建为二维网格，避免依赖列顺序。"""
+        coords = [self._extract_xy(label) for label in labels]
+        if any(c is None for c in coords):
+            return None
+
+        unique_x = sorted({x for x, _ in coords})
+        unique_y = sorted({y for _, y in coords})
+        x_index = {x: i for i, x in enumerate(unique_x)}
+        y_index = {y: i for i, y in enumerate(unique_y)}
+
+        if len(unique_x) * len(unique_y) != len(values):
+            return None
+
+        grid = np.full((len(unique_y), len(unique_x)), np.nan, dtype=float)
+        for (x, y), val in zip(coords, values):
+            yi = y_index[y]
+            xi = x_index[x]
+            if not np.isnan(grid[yi, xi]):
+                return None
+            grid[yi, xi] = val
+
+        if np.isnan(grid).any():
+            return None
+        return grid
+
     def init_tab1(self):
         layout = QVBoxLayout()
 
@@ -301,11 +345,12 @@ class DataViewer(QWidget):
         try:
             freq_ghz = float(self.freq_edit.text())
             freq_val = freq_ghz * 1e9
-            idx = (np.abs(self.sorted_freqs - freq_val)).argmin()
+            sorted_idx = (np.abs(self.sorted_freqs - freq_val)).argmin()
         except ValueError:
-            idx = 0  # 默认最大幅度的频率
+            sorted_idx = 0  # 默认最大幅度的频率
 
-        freq_val = self.sorted_freqs[idx]
+        freq_val = self.sorted_freqs[sorted_idx]
+        idx = self.sorted_idx[sorted_idx]
         sel_dir = self.dir_combo.currentText()
 
         # 组装数据
@@ -357,15 +402,22 @@ class DataViewer(QWidget):
         ph1 = np.angle(re1 + 1j * im1, deg=True)
         ph2 = np.angle(re2 + 1j * im2, deg=True)
 
-        grid_rows, grid_cols = self._get_grid_shape(trace1_re.iloc[:, 0].to_list())
-        if grid_rows * grid_cols != len(amp1):
-            self.log_box.append("无法推断网格尺寸，按单行展示")
-            grid_rows, grid_cols = 1, len(amp1)
+        labels = trace1_re.iloc[:, 0].to_list()
+        amp1_grid = self._values_to_grid(labels, amp1)
+        amp2_grid = self._values_to_grid(labels, amp2)
+        ph1_grid = self._values_to_grid(labels, ph1)
+        ph2_grid = self._values_to_grid(labels, ph2)
 
-        amp1 = amp1.reshape(grid_rows, grid_cols)
-        amp2 = amp2.reshape(grid_rows, grid_cols)
-        ph1 = ph1.reshape(grid_rows, grid_cols)
-        ph2 = ph2.reshape(grid_rows, grid_cols)
+        if any(g is None for g in [amp1_grid, amp2_grid, ph1_grid, ph2_grid]):
+            grid_rows, grid_cols = self._get_grid_shape(labels)
+            if grid_rows * grid_cols != len(amp1):
+                self.log_box.append("无法推断网格尺寸，按单行展示")
+                grid_rows, grid_cols = 1, len(amp1)
+
+            amp1_grid = amp1.reshape(grid_rows, grid_cols)
+            amp2_grid = amp2.reshape(grid_rows, grid_cols)
+            ph1_grid = ph1.reshape(grid_rows, grid_cols)
+            ph2_grid = ph2.reshape(grid_rows, grid_cols)
 
         self.fig.clear()
         titles = [
@@ -374,7 +426,7 @@ class DataViewer(QWidget):
             f"{trace2_name} 幅度",
             f"{trace2_name} 相位"
         ]
-        datas = [amp1, ph1, amp2, ph2]
+        datas = [amp1_grid, ph1_grid, amp2_grid, ph2_grid]
         for i, (data, t) in enumerate(zip(datas, titles), 1):
             ax = self.fig.add_subplot(2, 2, i)
             im = ax.imshow(data, aspect='auto')
@@ -403,15 +455,17 @@ class DataViewer(QWidget):
             amp = np.sqrt(np.sum(np.square(np.vstack(axis_values)), axis=0))
 
         labels = list(next(iter(self.data.values())).columns[1:])
-        grid_rows, grid_cols = self._get_grid_shape(labels)
-        if grid_rows * grid_cols != len(amp):
-            self.log_box.append("无法推断网格尺寸，按单行展示")
-            grid_rows, grid_cols = 1, len(amp)
-        amp = amp.reshape(grid_rows, grid_cols)
+        amp_grid = self._values_to_grid(labels, amp)
+        if amp_grid is None:
+            grid_rows, grid_cols = self._get_grid_shape(labels)
+            if grid_rows * grid_cols != len(amp):
+                self.log_box.append("无法推断网格尺寸，按单行展示")
+                grid_rows, grid_cols = 1, len(amp)
+            amp_grid = amp.reshape(grid_rows, grid_cols)
 
         self.fig.clear()
         ax = self.fig.add_subplot(1, 1, 1)
-        im = ax.imshow(amp, aspect='auto')
+        im = ax.imshow(amp_grid, aspect='auto')
         self.fig.colorbar(im, ax=ax)
         ax.set_title("幅度")
         self.fig.suptitle(f"{sel_dir}方向 @ {freq_val / 1e9:.3f} GHz")
