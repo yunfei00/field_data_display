@@ -31,6 +31,7 @@ class DataViewer(QWidget):
         self.sorted_idx = None
         self.trace_pairs = []
         self.data_mode = None
+        self.default_colormap = "jet"
 
         self.tabs = QTabWidget()
         self.tab1 = QWidget()  # 数据加载
@@ -230,6 +231,14 @@ class DataViewer(QWidget):
         self.freq_edit.returnPressed.connect(self.update_plot)
         dir_layout.addWidget(self.freq_edit)
 
+        dir_layout.addWidget(QLabel("色带:"))
+        self.cmap_combo = QComboBox()
+        colormaps = ["jet", "viridis", "plasma", "inferno", "magma", "turbo", "gray"]
+        self.cmap_combo.addItems(colormaps)
+        self.cmap_combo.setCurrentText(self.default_colormap)
+        self.cmap_combo.currentIndexChanged.connect(self.update_plot)
+        dir_layout.addWidget(self.cmap_combo)
+
         layout.addLayout(dir_layout)
 
         # Matplotlib画布
@@ -359,6 +368,7 @@ class DataViewer(QWidget):
         freq_val = self.sorted_freqs[sorted_idx]
         idx = self.sorted_idx[sorted_idx]
         sel_dir = self.dir_combo.currentText()
+        cmap_name = self.cmap_combo.currentText() or self.default_colormap
 
         # 组装数据
         df = None
@@ -381,7 +391,7 @@ class DataViewer(QWidget):
             return
 
         if self.data_mode == "amplitude":
-            self.update_plot_amplitude(idx, sel_dir, freq_val)
+            self.update_plot_amplitude(idx, sel_dir, freq_val, cmap_name)
             return
 
         if len(self.trace_pairs) < 2:
@@ -436,13 +446,13 @@ class DataViewer(QWidget):
         datas = [amp1_grid, ph1_grid, amp2_grid, ph2_grid]
         for i, (data, t) in enumerate(zip(datas, titles), 1):
             ax = self.fig.add_subplot(2, 2, i)
-            im = ax.imshow(data, aspect='auto')
+            im = ax.imshow(data, aspect='auto', cmap=cmap_name)
             self.fig.colorbar(im, ax=ax)
             ax.set_title(t)
         self.fig.suptitle(f"{sel_dir}方向 @ {self._format_frequency(freq_val)}")
         self.canvas.draw()
 
-    def update_plot_amplitude(self, idx, sel_dir, freq_val):
+    def update_plot_amplitude(self, idx, sel_dir, freq_val, cmap_name):
         """绘制频谱扫描幅度格式（frequency + 点位列）数据。"""
         axis_values = []
         for axis in sel_dir:
@@ -472,7 +482,7 @@ class DataViewer(QWidget):
 
         self.fig.clear()
         ax = self.fig.add_subplot(1, 1, 1)
-        im = ax.imshow(amp_grid, aspect='auto')
+        im = ax.imshow(amp_grid, aspect='auto', cmap=cmap_name)
         self.fig.colorbar(im, ax=ax)
         ax.set_title("幅度")
         self.fig.suptitle(f"{sel_dir}方向 @ {self._format_frequency(freq_val)}")
