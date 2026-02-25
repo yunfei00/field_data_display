@@ -367,26 +367,29 @@ class DataViewer(QWidget):
         if self.sorted_freqs is None or len(self.sorted_freqs) == 0:
             return
         self.current_sorted_pos = max(0, self.current_sorted_pos - 1)
-        self.update_plot()
+        self.update_plot(use_input=False)
 
     def move_sorted_frequency_down(self):
         """切到按幅度排序后更靠后（幅度更小）的频点。"""
         if self.sorted_freqs is None or len(self.sorted_freqs) == 0:
             return
         self.current_sorted_pos = min(len(self.sorted_freqs) - 1, self.current_sorted_pos + 1)
-        self.update_plot()
+        self.update_plot(use_input=False)
 
-    def update_plot(self):
+    def update_plot(self, use_input=True):
         if self.freqs is None:
             return
 
         # 从输入框取频率GHz
-        try:
-            freq_ghz = float(self.freq_edit.text())
-            freq_val = freq_ghz * 1e9
-            sorted_idx = (np.abs(self.sorted_freqs - freq_val)).argmin()
-            self.current_sorted_pos = int(sorted_idx)
-        except ValueError:
+        if use_input:
+            try:
+                freq_ghz = float(self.freq_edit.text())
+                freq_val = freq_ghz * 1e9
+                sorted_idx = (np.abs(self.sorted_freqs - freq_val)).argmin()
+                self.current_sorted_pos = int(sorted_idx)
+            except ValueError:
+                sorted_idx = self.current_sorted_pos
+        else:
             sorted_idx = self.current_sorted_pos
 
         sorted_idx = min(max(0, sorted_idx), len(self.sorted_freqs) - 1)
