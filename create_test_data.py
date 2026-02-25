@@ -80,6 +80,30 @@ def generate_zna67_data(nx=80, ny=50,
     )
 
 
+def generate_spectrum_amp_data(nx=3, ny=3,
+                               freq_start=1e9, freq_end=1.3e9, freq_num=201,
+                               seed=None, filepath=None):
+    """生成频谱扫描幅度格式测试数据（frequency + x*_y*_z_A 列）。"""
+    if seed is not None:
+        np.random.seed(seed)
+
+    freqs = np.linspace(freq_start, freq_end, freq_num)
+    columns = ["frequency"]
+    for y in range(1, ny + 1):
+        for x in range(1, nx + 1):
+            columns.append(f"x{x}_y{y}_z_A")
+
+    rows = []
+    for f in freqs:
+        values = np.abs(np.random.randn(nx * ny))
+        rows.append([f] + list(values))
+
+    df = pd.DataFrame(rows, columns=columns)
+    if filepath:
+        df.to_csv(filepath, index=False)
+    return df
+
+
 if __name__ == '__main__':
     # 使用示例
     _nx = 151

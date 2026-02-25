@@ -2,6 +2,7 @@ import os.path
 import sys
 import json
 import math
+import re
 from itertools import combinations
 import numpy as np
 import pandas as pd
@@ -29,6 +30,7 @@ class DataViewer(QWidget):
         self.sorted_freqs = None
         self.sorted_idx = None
         self.trace_pairs = []
+        self.data_mode = None
 
         self.tabs = QTabWidget()
         self.tab1 = QWidget()  # 数据加载
@@ -54,32 +56,51 @@ class DataViewer(QWidget):
         items = list(data_dict.items())
         base_name, base_df = items[0]
         base_cols = list(base_df.columns)
-        base_labels = base_df.iloc[:, 0].astype(str).tolist()
+
+        base_first_col = base_df.iloc[:, 0]
+        base_is_freq_rows = pd.to_numeric(base_first_col, errors="coerce").notna().all()
+        base_labels = base_first_col.astype(str).tolist()
 
         for name, df in items[1:]:
             if list(df.columns) != base_cols:
                 return False, f"{name} 与 {base_name} 的频率列不一致"
             if df.shape[0] != base_df.shape[0]:
                 return False, f"{name} 与 {base_name} 的行数不一致"
-            if df.iloc[:, 0].astype(str).tolist() != base_labels:
+
+            current_first_col = df.iloc[:, 0]
+            current_is_freq_rows = pd.to_numeric(current_first_col, errors="coerce").notna().all()
+            if current_is_freq_rows != base_is_freq_rows:
+                return False, f"{name} 与 {base_name} 的数据方向不一致"
+
+            if base_is_freq_rows:
+                base_freq = pd.to_numeric(base_first_col, errors="coerce").to_numpy(dtype=float)
+                cur_freq = pd.to_numeric(current_first_col, errors="coerce").to_numpy(dtype=float)
+                if not np.allclose(base_freq, cur_freq):
+                    return False, f"{name} 与 {base_name} 的频率点不一致"
+            elif current_first_col.astype(str).tolist() != base_labels:
                 return False, f"{name} 与 {base_name} 的采样标签顺序不一致"
 
         return True, ""
 
     @staticmethod
     def _get_grid_shape(labels):
-        """从标签 x_y_z_trace*_*(形如 10_3_0_trace1_re) 推断二维网格尺寸。"""
+        """从标签推断二维网格尺寸，兼容 x_y_z_* 与 x1_y1_z_A 格式。"""
         points = set()
         for label in labels:
-            parts = str(label).split("_")
-            if len(parts) < 5:
-                continue
-            try:
-                x = int(parts[0])
-                y = int(parts[1])
-                points.add((x, y))
-            except ValueError:
-                continue
+            text = str(label)
+            parts = text.split("_")
+
+            if len(parts) >= 2:
+                try:
+                    points.add((int(parts[0]), int(parts[1])))
+                    continue
+                except ValueError:
+                    pass
+
+            x_match = re.search(r"(?:^|_)x(-?\d+)(?:_|$)", text, re.IGNORECASE)
+            y_match = re.search(r"(?:^|_)y(-?\d+)(?:_|$)", text, re.IGNORECASE)
+            if x_match and y_match:
+                points.add((int(x_match.group(1)), int(y_match.group(1))))
 
         if points:
             xs = [p[0] for p in points]
@@ -218,16 +239,23 @@ class DataViewer(QWidget):
 
         self.refresh_direction_options()
 
-        # 获取频率列表
+        # 获取频率列表并识别数据模式
         first_df = next(iter(self.data.values()))
-        self.freqs = [round(float(f)) for f in first_df.columns[1:]]  # Hz
-        self.freqs = np.array(self.freqs)
+        first_col_numeric = pd.to_numeric(first_df.iloc[:, 0], errors="coerce")
+        self.data_mode = "amplitude" if first_col_numeric.notna().all() else "complex"
 
-        # 提取可用的 trace 信息，兼容旧格式 trace1/trace2 与 ZNA67 格式 Trc1_S21/Trc2_S31
-        self.trace_pairs = self._extract_trace_pairs(first_df.iloc[:, 0])
-        if not self.trace_pairs:
-            self.log_box.append("未识别到可用 trace（需要成对的 *_re/*_im）")
-            return
+        if self.data_mode == "amplitude":
+            self.freqs = first_col_numeric.to_numpy(dtype=float)
+            self.trace_pairs = []
+            self.log_box.append("识别为频谱幅度格式（frequency + 点位幅度列）")
+        else:
+            self.freqs = np.array([round(float(f)) for f in first_df.columns[1:]], dtype=float)  # Hz
+
+            # 提取可用的 trace 信息，兼容旧格式 trace1/trace2 与 ZNA67 格式 Trc1_S21/Trc2_S31
+            self.trace_pairs = self._extract_trace_pairs(first_df.iloc[:, 0])
+            if not self.trace_pairs:
+                self.log_box.append("未识别到可用 trace（需要成对的 *_re/*_im）")
+                return
 
         # 默认按幅度值排序
         self.sort_freqs_by_amp()
@@ -241,20 +269,25 @@ class DataViewer(QWidget):
             df = self.data["Hx"]
         else:
             df = next(iter(self.data.values()))
-        trace_name = self.trace_pairs[0]
-        trace_re = self._filter_trace_rows(df, trace_name, "re")
-        trace_im = self._filter_trace_rows(df, trace_name, "im")
-        if trace_re.empty or trace_im.empty:
-            self.log_box.append(f"用于排序的 trace({trace_name}) 数据不完整")
-            return
 
-        max_amp_list = []
-        for idx in range(len(self.freqs)):
-            re_vals = trace_re.iloc[:, idx + 1].to_numpy()
-            im_vals = trace_im.iloc[:, idx + 1].to_numpy()
-            amp = np.sqrt(re_vals ** 2 + im_vals ** 2)
-            max_amp_list.append(np.max(amp))
-        max_amp_list = np.array(max_amp_list)
+        if self.data_mode == "amplitude":
+            amp_matrix = df.iloc[:, 1:].to_numpy(dtype=float)
+            max_amp_list = np.max(np.abs(amp_matrix), axis=1)
+        else:
+            trace_name = self.trace_pairs[0]
+            trace_re = self._filter_trace_rows(df, trace_name, "re")
+            trace_im = self._filter_trace_rows(df, trace_name, "im")
+            if trace_re.empty or trace_im.empty:
+                self.log_box.append(f"用于排序的 trace({trace_name}) 数据不完整")
+                return
+
+            max_amp_list = []
+            for idx in range(len(self.freqs)):
+                re_vals = trace_re.iloc[:, idx + 1].to_numpy()
+                im_vals = trace_im.iloc[:, idx + 1].to_numpy()
+                amp = np.sqrt(re_vals ** 2 + im_vals ** 2)
+                max_amp_list.append(np.max(amp))
+            max_amp_list = np.array(max_amp_list)
 
         self.sorted_idx = np.argsort(max_amp_list)[::-1]
         self.sorted_freqs = self.freqs[self.sorted_idx]
@@ -293,6 +326,10 @@ class DataViewer(QWidget):
             df = combined
         if df is None:
             self.log_box.append(f"未找到方向 {sel_dir} 对应的数据")
+            return
+
+        if self.data_mode == "amplitude":
+            self.update_plot_amplitude(idx, sel_dir, freq_val)
             return
 
         if len(self.trace_pairs) < 2:
@@ -344,6 +381,40 @@ class DataViewer(QWidget):
             self.fig.colorbar(im, ax=ax)
             ax.set_title(t)
         self.fig.suptitle(f"{sel_dir}方向 @ {freq_val/1e9:.3f} GHz")
+        self.canvas.draw()
+
+    def update_plot_amplitude(self, idx, sel_dir, freq_val):
+        """绘制频谱扫描幅度格式（frequency + 点位列）数据。"""
+        axis_values = []
+        for axis in sel_dir:
+            key = f"H{axis.lower()}"
+            if key not in self.data:
+                continue
+            values = self.data[key].iloc[idx, 1:].to_numpy(dtype=float)
+            axis_values.append(values)
+
+        if not axis_values:
+            self.log_box.append(f"未找到方向 {sel_dir} 对应的数据")
+            return
+
+        if len(axis_values) == 1:
+            amp = axis_values[0]
+        else:
+            amp = np.sqrt(np.sum(np.square(np.vstack(axis_values)), axis=0))
+
+        labels = list(next(iter(self.data.values())).columns[1:])
+        grid_rows, grid_cols = self._get_grid_shape(labels)
+        if grid_rows * grid_cols != len(amp):
+            self.log_box.append("无法推断网格尺寸，按单行展示")
+            grid_rows, grid_cols = 1, len(amp)
+        amp = amp.reshape(grid_rows, grid_cols)
+
+        self.fig.clear()
+        ax = self.fig.add_subplot(1, 1, 1)
+        im = ax.imshow(amp, aspect='auto')
+        self.fig.colorbar(im, ax=ax)
+        ax.set_title("幅度")
+        self.fig.suptitle(f"{sel_dir}方向 @ {freq_val / 1e9:.3f} GHz")
         self.canvas.draw()
 
     def refresh_direction_options(self):
