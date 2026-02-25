@@ -29,6 +29,7 @@ class DataViewer(QWidget):
         self.freqs = None
         self.sorted_freqs = None
         self.sorted_idx = None
+        self.current_sorted_pos = 0
         self.trace_pairs = []
         self.data_mode = None
         self.default_colormap = "jet"
@@ -231,6 +232,14 @@ class DataViewer(QWidget):
         self.freq_edit.returnPressed.connect(self.update_plot)
         dir_layout.addWidget(self.freq_edit)
 
+        self.freq_up_btn = QPushButton("fre up")
+        self.freq_up_btn.clicked.connect(self.move_sorted_frequency_up)
+        dir_layout.addWidget(self.freq_up_btn)
+
+        self.freq_down_btn = QPushButton("fre down")
+        self.freq_down_btn.clicked.connect(self.move_sorted_frequency_down)
+        dir_layout.addWidget(self.freq_down_btn)
+
         dir_layout.addWidget(QLabel("色带:"))
         self.cmap_combo = QComboBox()
         colormaps = ["jet", "viridis", "plasma", "inferno", "magma", "turbo", "gray"]
@@ -351,7 +360,21 @@ class DataViewer(QWidget):
 
         self.sorted_idx = np.argsort(max_amp_list)[::-1]
         self.sorted_freqs = self.freqs[self.sorted_idx]
-        print(self.sorted_freqs)
+        self.current_sorted_pos = 0
+
+    def move_sorted_frequency_up(self):
+        """切到按幅度排序后更靠前（幅度更大）的频点。"""
+        if self.sorted_freqs is None or len(self.sorted_freqs) == 0:
+            return
+        self.current_sorted_pos = max(0, self.current_sorted_pos - 1)
+        self.update_plot()
+
+    def move_sorted_frequency_down(self):
+        """切到按幅度排序后更靠后（幅度更小）的频点。"""
+        if self.sorted_freqs is None or len(self.sorted_freqs) == 0:
+            return
+        self.current_sorted_pos = min(len(self.sorted_freqs) - 1, self.current_sorted_pos + 1)
+        self.update_plot()
 
     def update_plot(self):
         if self.freqs is None:
@@ -362,11 +385,16 @@ class DataViewer(QWidget):
             freq_ghz = float(self.freq_edit.text())
             freq_val = freq_ghz * 1e9
             sorted_idx = (np.abs(self.sorted_freqs - freq_val)).argmin()
+            self.current_sorted_pos = int(sorted_idx)
         except ValueError:
-            sorted_idx = 0  # 默认最大幅度的频率
+            sorted_idx = self.current_sorted_pos
+
+        sorted_idx = min(max(0, sorted_idx), len(self.sorted_freqs) - 1)
+        self.current_sorted_pos = sorted_idx
 
         freq_val = self.sorted_freqs[sorted_idx]
         idx = self.sorted_idx[sorted_idx]
+        self.freq_edit.setText(f"{freq_val / 1e9:.6g}")
         sel_dir = self.dir_combo.currentText()
         cmap_name = self.cmap_combo.currentText() or self.default_colormap
 
