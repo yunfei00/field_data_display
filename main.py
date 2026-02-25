@@ -2,7 +2,6 @@ import os.path
 import sys
 import json
 import math
-import re
 import numpy as np
 import pandas as pd
 from PySide6.QtWidgets import (
@@ -380,9 +379,17 @@ class DataViewer(QWidget):
 
     def _filter_trace_rows(self, df, trace_name, part):
         """按 trace 名和分量(re/im)精确过滤行。"""
-        pattern = re.compile(rf"^\\d+_\\d+_[^_]+_{re.escape(trace_name)}_{part}$", re.IGNORECASE)
+        target_part = str(part).lower()
+
+        def _matched(label):
+            parsed = self._parse_trace_label(label)
+            if not parsed:
+                return False
+            parsed_trace, parsed_part = parsed
+            return parsed_trace == trace_name and parsed_part == target_part
+
         labels = df.iloc[:, 0].astype(str)
-        return df[labels.map(lambda x: bool(pattern.match(x)))]
+        return df[labels.map(_matched)]
 
 
 if __name__ == "__main__":
