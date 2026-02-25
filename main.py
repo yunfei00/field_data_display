@@ -2,6 +2,7 @@ import os.path
 import sys
 import json
 import math
+from itertools import combinations
 import numpy as np
 import pandas as pd
 from PySide6.QtWidgets import (
@@ -215,6 +216,8 @@ class DataViewer(QWidget):
             self.log_box.append(f"数据校验失败: {message}")
             return
 
+        self.refresh_direction_options()
+
         # 获取频率列表
         first_df = next(iter(self.data.values()))
         self.freqs = [round(float(f)) for f in first_df.columns[1:]]  # Hz
@@ -342,6 +345,25 @@ class DataViewer(QWidget):
             ax.set_title(t)
         self.fig.suptitle(f"{sel_dir}方向 @ {freq_val/1e9:.3f} GHz")
         self.canvas.draw()
+
+    def refresh_direction_options(self):
+        """根据已加载方向动态更新可选场方向组合。"""
+        current = self.dir_combo.currentText()
+        available_axes = [axis for axis in ["X", "Y", "Z"] if f"H{axis.lower()}" in self.data]
+        if not available_axes:
+            return
+
+        options = available_axes.copy()
+        for size in range(2, len(available_axes) + 1):
+            options.extend("".join(group) for group in combinations(available_axes, size))
+
+        self.dir_combo.blockSignals(True)
+        self.dir_combo.clear()
+        self.dir_combo.addItems(options)
+
+        restore_idx = self.dir_combo.findText(current)
+        self.dir_combo.setCurrentIndex(restore_idx if restore_idx >= 0 else 0)
+        self.dir_combo.blockSignals(False)
 
     @staticmethod
     def _parse_trace_label(label):
