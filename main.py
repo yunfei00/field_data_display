@@ -2,6 +2,7 @@ import os.path
 import sys
 import json
 import math
+import re
 import numpy as np
 import pandas as pd
 from PySide6.QtWidgets import (
@@ -27,6 +28,7 @@ class DataViewer(QWidget):
         self.freqs = None
         self.sorted_freqs = None
         self.sorted_idx = None
+        self.trace_pairs = []
 
         self.tabs = QTabWidget()
         self.tab1 = QWidget()  # 数据加载
@@ -219,6 +221,12 @@ class DataViewer(QWidget):
         self.freqs = [round(float(f)) for f in first_df.columns[1:]]  # Hz
         self.freqs = np.array(self.freqs)
 
+        # 提取可用的 trace 信息，兼容旧格式 trace1/trace2 与 ZNA67 格式 Trc1_S21/Trc2_S31
+        self.trace_pairs = self._extract_trace_pairs(first_df.iloc[:, 0])
+        if not self.trace_pairs:
+            self.log_box.append("未识别到可用 trace（需要成对的 *_re/*_im）")
+            return
+
         # 默认按幅度值排序
         self.sort_freqs_by_amp()
 
@@ -231,12 +239,17 @@ class DataViewer(QWidget):
             df = self.data["Hx"]
         else:
             df = next(iter(self.data.values()))
-        trace1_re = df[df.iloc[:, 0].str.contains("trace1_re")]
-        trace1_im = df[df.iloc[:, 0].str.contains("trace1_im")]
+        trace_name = self.trace_pairs[0]
+        trace_re = self._filter_trace_rows(df, trace_name, "re")
+        trace_im = self._filter_trace_rows(df, trace_name, "im")
+        if trace_re.empty or trace_im.empty:
+            self.log_box.append(f"用于排序的 trace({trace_name}) 数据不完整")
+            return
+
         max_amp_list = []
         for idx in range(len(self.freqs)):
-            re_vals = trace1_re.iloc[:, idx + 1].to_numpy()
-            im_vals = trace1_im.iloc[:, idx + 1].to_numpy()
+            re_vals = trace_re.iloc[:, idx + 1].to_numpy()
+            im_vals = trace_im.iloc[:, idx + 1].to_numpy()
             amp = np.sqrt(re_vals ** 2 + im_vals ** 2)
             max_amp_list.append(np.max(amp))
         max_amp_list = np.array(max_amp_list)
@@ -280,13 +293,19 @@ class DataViewer(QWidget):
             self.log_box.append(f"未找到方向 {sel_dir} 对应的数据")
             return
 
-        trace1_re = df[df.iloc[:, 0].str.contains("trace1_re")]
-        trace1_im = df[df.iloc[:, 0].str.contains("trace1_im")]
-        trace2_re = df[df.iloc[:, 0].str.contains("trace2_re")]
-        trace2_im = df[df.iloc[:, 0].str.contains("trace2_im")]
+        if len(self.trace_pairs) < 2:
+            self.log_box.append("当前数据至少需要两组 trace（含 re/im）")
+            return
+
+        trace1_name = self.trace_pairs[0]
+        trace2_name = self.trace_pairs[1]
+        trace1_re = self._filter_trace_rows(df, trace1_name, "re")
+        trace1_im = self._filter_trace_rows(df, trace1_name, "im")
+        trace2_re = self._filter_trace_rows(df, trace2_name, "re")
+        trace2_im = self._filter_trace_rows(df, trace2_name, "im")
 
         if trace1_re.empty or trace1_im.empty or trace2_re.empty or trace2_im.empty:
-            self.log_box.append("数据缺少 trace1/trace2 的实部或虚部")
+            self.log_box.append(f"数据缺少 {trace1_name}/{trace2_name} 的实部或虚部")
             return
 
         re1 = trace1_re.iloc[:, idx + 1].to_numpy()
@@ -310,7 +329,12 @@ class DataViewer(QWidget):
         ph2 = ph2.reshape(grid_rows, grid_cols)
 
         self.fig.clear()
-        titles = [f"Trace1 幅度", f"Trace1 相位", f"Trace2 幅度", f"Trace2 相位"]
+        titles = [
+            f"{trace1_name} 幅度",
+            f"{trace1_name} 相位",
+            f"{trace2_name} 幅度",
+            f"{trace2_name} 相位"
+        ]
         datas = [amp1, ph1, amp2, ph2]
         for i, (data, t) in enumerate(zip(datas, titles), 1):
             ax = self.fig.add_subplot(2, 2, i)
@@ -319,6 +343,46 @@ class DataViewer(QWidget):
             ax.set_title(t)
         self.fig.suptitle(f"{sel_dir}方向 @ {freq_val/1e9:.3f} GHz")
         self.canvas.draw()
+
+    @staticmethod
+    def _parse_trace_label(label):
+        """解析 x_y_z_<trace_name>_<re/im> 格式，返回 (trace_name, part)。"""
+        parts = str(label).split("_")
+        if len(parts) < 5:
+            return None
+        part = parts[-1].lower()
+        if part not in {"re", "im"}:
+            return None
+        trace_name = "_".join(parts[3:-1])
+        if not trace_name:
+            return None
+        return trace_name, part
+
+    def _extract_trace_pairs(self, labels):
+        """提取同时具备 re/im 的 trace 名称，并优先返回常见顺序。"""
+        parts_map = {}
+        for label in labels.astype(str):
+            parsed = self._parse_trace_label(label)
+            if not parsed:
+                continue
+            trace_name, part = parsed
+            parts_map.setdefault(trace_name, set()).add(part)
+
+        available = [name for name, parts in parts_map.items() if {"re", "im"}.issubset(parts)]
+        if not available:
+            return []
+
+        # 兼容常见命名，优先用户关注的 Trc1_S21/Trc2_S31 以及历史 trace1/trace2
+        preferred = ["Trc1_S21", "Trc2_S31", "trace1", "trace2"]
+        ordered = [name for name in preferred if name in available]
+        ordered.extend(sorted([name for name in available if name not in ordered]))
+        return ordered
+
+    def _filter_trace_rows(self, df, trace_name, part):
+        """按 trace 名和分量(re/im)精确过滤行。"""
+        pattern = re.compile(rf"^\\d+_\\d+_[^_]+_{re.escape(trace_name)}_{part}$", re.IGNORECASE)
+        labels = df.iloc[:, 0].astype(str)
+        return df[labels.map(lambda x: bool(pattern.match(x)))]
 
 
 if __name__ == "__main__":
