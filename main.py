@@ -263,7 +263,10 @@ class DataViewer(QWidget):
         layout.addLayout(dir_layout)
 
         self.amp_stats_label = QLabel("幅度统计: -")
+        self.amp_stats_label.setFixedHeight(22)
+        self.amp_stats_label.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.amp_stats_label)
+        layout.setSpacing(4)
 
         # Matplotlib画布
         self.fig = Figure(figsize=(10, 8))
@@ -343,9 +346,72 @@ class DataViewer(QWidget):
 
         # 默认按幅度值排序
         self.sort_freqs_by_amp()
+        self.apply_default_amp_limits()
 
         self.tabs.setCurrentIndex(1)
         self.update_plot()
+
+    def apply_default_amp_limits(self):
+        """使用首张图的幅度范围作为默认上下限。"""
+        if self.sorted_idx is None or len(self.sorted_idx) == 0:
+            return
+
+        idx = int(self.sorted_idx[0])
+        sel_dir = self.dir_combo.currentText() or "X"
+        amp_min, amp_max = self._get_amplitude_limits(idx, sel_dir)
+        if amp_min is None or amp_max is None:
+            return
+
+        self.amp_min_edit.setText(f"{amp_min:.6g}")
+        self.amp_max_edit.setText(f"{amp_max:.6g}")
+
+    def _get_amplitude_limits(self, idx, sel_dir):
+        """获取指定频点和方向下的幅值最小/最大值。"""
+        if self.data_mode == "amplitude":
+            values = []
+            for axis in sel_dir:
+                key = f"H{axis.lower()}"
+                if key not in self.data:
+                    continue
+                values.append(self.data[key].iloc[idx, 1:].to_numpy(dtype=float))
+            if not values:
+                return None, None
+            merged = np.concatenate(values)
+            return float(np.min(merged)), float(np.max(merged))
+
+        if sel_dir in ["X", "Y", "Z"]:
+            key = f"H{sel_dir.lower()}"
+            df = self.data.get(key)
+        else:
+            df = None
+            for axis in sel_dir:
+                key = f"H{axis.lower()}"
+                if key not in self.data:
+                    continue
+                part_df = self.data[key]
+                if df is None:
+                    df = part_df.copy()
+                else:
+                    df.iloc[:, 1:] += part_df.iloc[:, 1:]
+
+        if df is None or len(self.trace_pairs) < 2:
+            return None, None
+
+        amps = []
+        for trace_name in self.trace_pairs[:2]:
+            trace_re = self._filter_trace_rows(df, trace_name, "re")
+            trace_im = self._filter_trace_rows(df, trace_name, "im")
+            if trace_re.empty or trace_im.empty:
+                continue
+            re_vals = trace_re.iloc[:, idx + 1].to_numpy(dtype=float)
+            im_vals = trace_im.iloc[:, idx + 1].to_numpy(dtype=float)
+            amps.append(np.sqrt(re_vals ** 2 + im_vals ** 2))
+
+        if not amps:
+            return None, None
+
+        merged = np.concatenate(amps)
+        return float(np.min(merged)), float(np.max(merged))
 
     def sort_freqs_by_amp(self):
         """计算每个频率的最大幅度并排序"""
