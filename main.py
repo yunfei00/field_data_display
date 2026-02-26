@@ -485,6 +485,9 @@ class DataViewer(QWidget):
         self.freq_edit.setText(f"{freq_val / 1e9:.6g}")
         sel_dir = self.dir_combo.currentText()
         cmap_name = self.cmap_combo.currentText() or self.default_colormap
+
+        # 频点切换后，幅值上下限跟随当前实际数据刷新。
+        self._sync_amp_limits_for_current_view(idx, sel_dir)
         amp_vmin, amp_vmax = self._parse_amp_limits()
 
         # 组装数据
@@ -589,6 +592,17 @@ class DataViewer(QWidget):
                 ]
             )
         )
+
+    def _sync_amp_limits_for_current_view(self, idx, sel_dir):
+        """按当前频点与方向刷新幅值上下限输入框。"""
+        amp_min, amp_max = self._get_amplitude_limits(idx, sel_dir)
+        if amp_min is None or amp_max is None:
+            self.amp_min_edit.clear()
+            self.amp_max_edit.clear()
+            return
+
+        self.amp_min_edit.setText(f"{amp_min:.6g}")
+        self.amp_max_edit.setText(f"{amp_max:.6g}")
 
     def update_plot_amplitude(self, idx, sel_dir, freq_val, cmap_name, amp_vmin=None, amp_vmax=None):
         """绘制频谱扫描幅度格式（frequency + 点位列）数据。"""
