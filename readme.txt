@@ -65,3 +65,15 @@ frequency,x1_y1_z_A,x2_y1_z_A,x3_y1_z_A,x1_y2_z_A,...
 - 单方向(X/Y/Z): 直接显示该方向幅度
 - 组合方向(XY/XZ/YZ/XYZ): 按向量模值合并 sqrt(Hx^2 + Hy^2 + ...)
 该兼容逻辑对后续频谱列名变化保持容错（优先识别 x*_y* 坐标，否则降级单行显示）。
+
+---
+
+自动化打包 EXE（GitHub Actions）:
+- 已添加 `.github/workflows/build-windows-exe.yml`。
+- 当推送 tag（格式 `v*`，例如 `v1.0.1`）时会自动执行：
+  1) 安装依赖（含 pyinstaller）
+  2) 使用 `pyinstaller --onefile --windowed` 打包 `main.py`
+  3) 上传构建产物到 Actions Artifacts
+  4) 若为 tag 触发，同时把 `dist/field_data_display.exe` 上传到对应 GitHub Release
+
+如果你已经在网页端创建了 `v1.0.0` 且该 tag 早于本工作流提交，需在包含该工作流的新提交上重新打一个新 tag（如 `v1.0.1`）或重新推送同名 tag，才能触发自动打包。
