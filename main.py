@@ -8,7 +8,8 @@ import numpy as np
 import pandas as pd
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QLineEdit, QFileDialog, QTextEdit, QTabWidget, QComboBox
+    QLabel, QLineEdit, QFileDialog, QTextEdit, QTabWidget, QComboBox,
+    QDialog
 )
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -33,6 +34,8 @@ class DataViewer(QWidget):
         self.trace_pairs = []
         self.data_mode = None
         self.default_colormap = "jet"
+        self.current_plot_items = []
+        self.standalone_windows = []
 
         self.tabs = QTabWidget()
         self.tab1 = QWidget()  # 数据加载
@@ -263,6 +266,16 @@ class DataViewer(QWidget):
         self.amp_reset_btn = QPushButton("重置幅值")
         self.amp_reset_btn.clicked.connect(self.reset_amp_limits)
         dir_layout.addWidget(self.amp_reset_btn)
+
+        dir_layout.addWidget(QLabel("独立编号:"))
+        self.plot_selector = QComboBox()
+        self.plot_selector.addItem("无可选子图")
+        self.plot_selector.setEnabled(False)
+        dir_layout.addWidget(self.plot_selector)
+
+        self.standalone_btn = QPushButton("独立绘图")
+        self.standalone_btn.clicked.connect(self.open_standalone_plot)
+        dir_layout.addWidget(self.standalone_btn)
 
         layout.addLayout(dir_layout)
 
@@ -561,6 +574,7 @@ class DataViewer(QWidget):
             ph2_grid = ph2.reshape(grid_rows, grid_cols)
 
         self.fig.clear()
+        self.current_plot_items = []
         raw_amp1 = amp1.copy()
         raw_amp2 = amp2.copy()
         if amp_vmin is not None or amp_vmax is not None:
@@ -575,8 +589,18 @@ class DataViewer(QWidget):
         ]
         datas = [amp1_grid, ph1_grid, amp2_grid, ph2_grid]
         for i, (data, t) in enumerate(zip(datas, titles), 1):
+            is_amp = "幅度" in t
+            self.current_plot_items.append({
+                "index": i,
+                "title": t,
+                "data": np.array(data, copy=True),
+                "cmap": cmap_name,
+                "vmin": amp_vmin if is_amp else None,
+                "vmax": amp_vmax if is_amp else None,
+                "suptitle": f"{sel_dir}方向 @ {self._format_frequency(freq_val)}"
+            })
             ax = self.fig.add_subplot(2, 2, i)
-            if "幅度" in t:
+            if is_amp:
                 im = ax.imshow(data, aspect='auto', cmap=cmap_name, vmin=amp_vmin, vmax=amp_vmax)
             else:
                 im = ax.imshow(data, aspect='auto', cmap=cmap_name)
@@ -584,6 +608,7 @@ class DataViewer(QWidget):
             ax.set_title(t)
         self.fig.suptitle(f"{sel_dir}方向 @ {self._format_frequency(freq_val)}")
         self.canvas.draw()
+        self._refresh_plot_selector()
 
         self.amp_stats_label.setText(
             self._format_amplitude_stats(
@@ -635,18 +660,85 @@ class DataViewer(QWidget):
             axis_grids.append((axis, amp, amp_grid))
 
         self.fig.clear()
+        self.current_plot_items = []
         for i, (axis, _, amp_grid) in enumerate(axis_grids, 1):
+            self.current_plot_items.append({
+                "index": i,
+                "title": f"{axis}方向 幅度",
+                "data": np.array(amp_grid, copy=True),
+                "cmap": cmap_name,
+                "vmin": amp_vmin,
+                "vmax": amp_vmax,
+                "suptitle": f"{sel_dir}方向 @ {self._format_frequency(freq_val)}"
+            })
             ax = self.fig.add_subplot(1, len(axis_grids), i)
             im = ax.imshow(amp_grid, aspect='auto', cmap=cmap_name, vmin=amp_vmin, vmax=amp_vmax)
             self.fig.colorbar(im, ax=ax)
             ax.set_title(f"{axis}方向 幅度")
         self.fig.suptitle(f"{sel_dir}方向 @ {self._format_frequency(freq_val)}")
         self.canvas.draw()
+        self._refresh_plot_selector()
         self.amp_stats_label.setText(
             self._format_amplitude_stats([
                 (f"{axis}方向", amp) for axis, amp, _ in axis_grids
             ])
         )
+
+    def _refresh_plot_selector(self):
+        """刷新可独立绘制的子图编号列表。"""
+        self.plot_selector.blockSignals(True)
+        self.plot_selector.clear()
+
+        if not self.current_plot_items:
+            self.plot_selector.addItem("无可选子图")
+            self.plot_selector.setEnabled(False)
+            self.plot_selector.blockSignals(False)
+            return
+
+        for item in self.current_plot_items:
+            self.plot_selector.addItem(f"{item['index']} - {item['title']}")
+        self.plot_selector.setCurrentIndex(0)
+        self.plot_selector.setEnabled(True)
+        self.plot_selector.blockSignals(False)
+
+    def open_standalone_plot(self):
+        """按当前选择的编号独立弹出单张子图。"""
+        if not self.current_plot_items:
+            self.log_box.append("当前没有可独立绘制的子图")
+            return
+
+        selected_idx = self.plot_selector.currentIndex()
+        if selected_idx < 0 or selected_idx >= len(self.current_plot_items):
+            self.log_box.append("独立绘图编号无效")
+            return
+
+        item = self.current_plot_items[selected_idx]
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"独立绘图 - {item['index']} {item['title']}")
+        dialog.resize(900, 700)
+
+        layout = QVBoxLayout(dialog)
+        fig = Figure(figsize=(8, 6))
+        canvas = FigureCanvas(fig)
+        layout.addWidget(canvas)
+
+        ax = fig.add_subplot(111)
+        im = ax.imshow(
+            item["data"],
+            aspect='auto',
+            cmap=item["cmap"],
+            vmin=item["vmin"],
+            vmax=item["vmax"]
+        )
+        fig.colorbar(im, ax=ax)
+        ax.set_title(item["title"])
+        fig.suptitle(item["suptitle"])
+        canvas.draw()
+
+        self.standalone_windows.append(dialog)
+        dialog.finished.connect(lambda _: self.standalone_windows.remove(dialog) if dialog in self.standalone_windows else None)
+        dialog.show()
+        self.log_box.append(f"已独立绘制子图: {item['index']} - {item['title']}")
 
     def _parse_amp_limits(self):
         """解析用户输入的幅值上下限，失败时退回自动范围。"""
