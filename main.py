@@ -250,6 +250,23 @@ class DataViewer(QWidget):
 
         layout.addLayout(dir_layout)
 
+        self.amp_stats_label = QLabel("幅度统计: -")
+        layout.addWidget(self.amp_stats_label)
+
+        limit_layout = QHBoxLayout()
+        limit_layout.addWidget(QLabel("幅度最小值:"))
+        self.amp_min_edit = QLineEdit()
+        self.amp_min_edit.setPlaceholderText("自动")
+        self.amp_min_edit.returnPressed.connect(self.update_plot)
+        limit_layout.addWidget(self.amp_min_edit)
+
+        limit_layout.addWidget(QLabel("幅度最大值:"))
+        self.amp_max_edit = QLineEdit()
+        self.amp_max_edit.setPlaceholderText("自动")
+        self.amp_max_edit.returnPressed.connect(self.update_plot)
+        limit_layout.addWidget(self.amp_max_edit)
+        layout.addLayout(limit_layout)
+
         # Matplotlib画布
         self.fig = Figure(figsize=(10, 8))
         self.canvas = FigureCanvas(self.fig)
@@ -419,6 +436,7 @@ class DataViewer(QWidget):
             df = combined
         if df is None:
             self.log_box.append(f"未找到方向 {sel_dir} 对应的数据")
+            self.amp_stats_label.setText("幅度统计: -")
             return
 
         if self.data_mode == "amplitude":
@@ -427,6 +445,7 @@ class DataViewer(QWidget):
 
         if len(self.trace_pairs) < 2:
             self.log_box.append("当前数据至少需要两组 trace（含 re/im）")
+            self.amp_stats_label.setText("幅度统计: -")
             return
 
         trace1_name = self.trace_pairs[0]
@@ -438,6 +457,7 @@ class DataViewer(QWidget):
 
         if trace1_re.empty or trace1_im.empty or trace2_re.empty or trace2_im.empty:
             self.log_box.append(f"数据缺少 {trace1_name}/{trace2_name} 的实部或虚部")
+            self.amp_stats_label.setText("幅度统计: -")
             return
 
         re1 = trace1_re.iloc[:, idx + 1].to_numpy()
@@ -474,14 +494,28 @@ class DataViewer(QWidget):
             f"{trace2_name} 幅度",
             f"{trace2_name} 相位"
         ]
+        vmin, vmax = self._get_amp_limits()
         datas = [amp1_grid, ph1_grid, amp2_grid, ph2_grid]
         for i, (data, t) in enumerate(zip(datas, titles), 1):
             ax = self.fig.add_subplot(2, 2, i)
-            im = ax.imshow(data, aspect='auto', cmap=cmap_name)
+            if i in (1, 3):
+                plot_data = np.clip(data, vmin, vmax) if (vmin is not None and vmax is not None) else data
+                im = ax.imshow(plot_data, aspect='auto', cmap=cmap_name, vmin=vmin, vmax=vmax)
+            else:
+                im = ax.imshow(data, aspect='auto', cmap=cmap_name)
             self.fig.colorbar(im, ax=ax)
             ax.set_title(t)
         self.fig.suptitle(f"{sel_dir}方向 @ {self._format_frequency(freq_val)}")
         self.canvas.draw()
+
+        self.amp_stats_label.setText(
+            self._format_amplitude_stats(
+                [
+                    (trace1_name, amp1),
+                    (trace2_name, amp2),
+                ]
+            )
+        )
 
     def update_plot_amplitude(self, idx, sel_dir, freq_val, cmap_name):
         """绘制频谱扫描幅度格式（frequency + 点位列）数据。"""
@@ -491,16 +525,18 @@ class DataViewer(QWidget):
             if key not in self.data:
                 continue
             values = self.data[key].iloc[idx, 1:].to_numpy(dtype=float)
-            axis_values.append(values)
+            axis_values.append((axis, values))
 
         if not axis_values:
             self.log_box.append(f"未找到方向 {sel_dir} 对应的数据")
+            self.amp_stats_label.setText("幅度统计: -")
             return
 
+        # 图像按所选方向合成显示；统计信息始终展示各原始方向
         if len(axis_values) == 1:
-            amp = axis_values[0]
+            amp = axis_values[0][1]
         else:
-            amp = np.sqrt(np.sum(np.square(np.vstack(axis_values)), axis=0))
+            amp = np.sqrt(np.sum(np.square(np.vstack([vals for _, vals in axis_values])), axis=0))
 
         labels = list(next(iter(self.data.values())).columns[1:])
         amp_grid = self._values_to_grid(labels, amp)
@@ -511,13 +547,21 @@ class DataViewer(QWidget):
                 grid_rows, grid_cols = 1, len(amp)
             amp_grid = amp.reshape(grid_rows, grid_cols)
 
+        vmin, vmax = self._get_amp_limits()
+        plot_data = np.clip(amp_grid, vmin, vmax) if (vmin is not None and vmax is not None) else amp_grid
+
         self.fig.clear()
         ax = self.fig.add_subplot(1, 1, 1)
-        im = ax.imshow(amp_grid, aspect='auto', cmap=cmap_name)
+        im = ax.imshow(plot_data, aspect='auto', cmap=cmap_name, vmin=vmin, vmax=vmax)
         self.fig.colorbar(im, ax=ax)
         ax.set_title("幅度")
         self.fig.suptitle(f"{sel_dir}方向 @ {self._format_frequency(freq_val)}")
         self.canvas.draw()
+        self.amp_stats_label.setText(
+            self._format_amplitude_stats([
+                (f"{axis}方向", values) for axis, values in axis_values
+            ])
+        )
 
     def refresh_direction_options(self):
         """根据已加载方向动态更新可选场方向组合。"""
@@ -585,6 +629,40 @@ class DataViewer(QWidget):
 
         labels = df.iloc[:, 0].astype(str)
         return df[labels.map(_matched)]
+
+    def _get_amp_limits(self):
+        """读取幅度色标上下限；留空时自动，非法时回退自动。"""
+        min_text = self.amp_min_edit.text().strip()
+        max_text = self.amp_max_edit.text().strip()
+
+        if not min_text or not max_text:
+            return None, None
+
+        try:
+            vmin = float(min_text)
+            vmax = float(max_text)
+        except ValueError:
+            self.log_box.append("幅度最小/最大值输入无效，已切换为自动范围")
+            return None, None
+
+        if vmin >= vmax:
+            self.log_box.append("幅度最小值需要小于最大值，已切换为自动范围")
+            return None, None
+        return vmin, vmax
+
+    @staticmethod
+    def _format_amplitude_stats(items):
+        """格式化多个幅度数据的最小值/最大值信息。"""
+        stats = []
+        for name, values in items:
+            arr = np.asarray(values, dtype=float)
+            if arr.size == 0:
+                continue
+            stats.append(f"{name} min={np.min(arr):.6g}, max={np.max(arr):.6g}")
+
+        if not stats:
+            return "幅度统计: -"
+        return "幅度统计 | " + " | ".join(stats)
 
 
 if __name__ == "__main__":
