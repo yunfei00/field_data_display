@@ -15,6 +15,11 @@ from matplotlib.figure import Figure
 import matplotlib
 import matplotlib.pyplot as plt
 
+# 应用基础信息
+APP_TAG = "stable"
+APP_VERSION = "v1.0.0"
+APP_DESCRIPTION = "磁场数据加载、分析与可视化工具"
+
 # ✅ 设置中文字体（Windows常用）
 matplotlib.rcParams['font.sans-serif'] = ['SimHei']    # 黑体
 matplotlib.rcParams['axes.unicode_minus'] = False      # 正常显示负号
@@ -23,7 +28,7 @@ matplotlib.rcParams['axes.unicode_minus'] = False      # 正常显示负号
 class DataViewer(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("磁场数据工具")
+        self.setWindowTitle(f"磁场数据工具 [{APP_TAG}] {APP_VERSION}")
         self.resize(1200, 800)
 
         self.data = {}  # 存放 Hx/Hy/Hz
@@ -51,6 +56,7 @@ class DataViewer(QWidget):
 
         self.conf_file = os.path.join(os.getcwd(), 'conf.json')
         self.load_config()
+        self.log(f"应用信息: {APP_DESCRIPTION} | tag={APP_TAG} | version={APP_VERSION}")
 
     @staticmethod
     def _format_frequency(freq_hz):
