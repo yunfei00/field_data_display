@@ -223,13 +223,13 @@ class DataViewer(QWidget):
         dir_layout.addWidget(QLabel("场方向:"))
         self.dir_combo = QComboBox()
         self.dir_combo.addItems(["X", "Y", "Z", "XY", "XZ", "YZ", "XYZ"])
-        self.dir_combo.currentIndexChanged.connect(self.update_plot)
+        self.dir_combo.currentIndexChanged.connect(lambda _: self.update_plot(sync_amp_limits=True))
         dir_layout.addWidget(self.dir_combo)
 
         dir_layout.addWidget(QLabel("频率(GHz):"))
         self.freq_edit = QLineEdit()
         self.freq_edit.setPlaceholderText("输入频率GHz,回车更新")
-        self.freq_edit.returnPressed.connect(self.update_plot)
+        self.freq_edit.returnPressed.connect(lambda: self.update_plot(sync_amp_limits=True))
         dir_layout.addWidget(self.freq_edit)
 
         self.freq_up_btn = QPushButton("fre up")
@@ -245,19 +245,19 @@ class DataViewer(QWidget):
         colormaps = ["jet", "viridis", "plasma", "inferno", "magma", "turbo", "gray"]
         self.cmap_combo.addItems(colormaps)
         self.cmap_combo.setCurrentText(self.default_colormap)
-        self.cmap_combo.currentIndexChanged.connect(self.update_plot)
+        self.cmap_combo.currentIndexChanged.connect(lambda _: self.update_plot(sync_amp_limits=False))
         dir_layout.addWidget(self.cmap_combo)
 
         dir_layout.addWidget(QLabel("幅值最小:"))
         self.amp_min_edit = QLineEdit()
         self.amp_min_edit.setPlaceholderText("自动")
-        self.amp_min_edit.returnPressed.connect(self.update_plot)
+        self.amp_min_edit.returnPressed.connect(lambda: self.update_plot(sync_amp_limits=False))
         dir_layout.addWidget(self.amp_min_edit)
 
         dir_layout.addWidget(QLabel("幅值最大:"))
         self.amp_max_edit = QLineEdit()
         self.amp_max_edit.setPlaceholderText("自动")
-        self.amp_max_edit.returnPressed.connect(self.update_plot)
+        self.amp_max_edit.returnPressed.connect(lambda: self.update_plot(sync_amp_limits=False))
         dir_layout.addWidget(self.amp_max_edit)
 
         self.amp_reset_btn = QPushButton("重置幅值")
@@ -452,16 +452,16 @@ class DataViewer(QWidget):
         if self.sorted_freqs is None or len(self.sorted_freqs) == 0:
             return
         self.current_sorted_pos = max(0, self.current_sorted_pos - 1)
-        self.update_plot(use_input=False)
+        self.update_plot(use_input=False, sync_amp_limits=True)
 
     def move_sorted_frequency_down(self):
         """切到按幅度排序后更靠后（幅度更小）的频点。"""
         if self.sorted_freqs is None or len(self.sorted_freqs) == 0:
             return
         self.current_sorted_pos = min(len(self.sorted_freqs) - 1, self.current_sorted_pos + 1)
-        self.update_plot(use_input=False)
+        self.update_plot(use_input=False, sync_amp_limits=True)
 
-    def update_plot(self, use_input=True):
+    def update_plot(self, use_input=True, sync_amp_limits=True):
         if self.freqs is None:
             return
 
@@ -486,8 +486,9 @@ class DataViewer(QWidget):
         sel_dir = self.dir_combo.currentText()
         cmap_name = self.cmap_combo.currentText() or self.default_colormap
 
-        # 频点切换后，幅值上下限跟随当前实际数据刷新。
-        self._sync_amp_limits_for_current_view(idx, sel_dir)
+        # 仅在频点/方向切换时同步幅值范围，避免覆盖用户手动输入。
+        if sync_amp_limits:
+            self._sync_amp_limits_for_current_view(idx, sel_dir)
         amp_vmin, amp_vmax = self._parse_amp_limits()
 
         # 组装数据
