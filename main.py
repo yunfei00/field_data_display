@@ -172,6 +172,26 @@ class DataViewer(QWidget):
             return None
         return grid
 
+    @staticmethod
+    def _merge_axis_amplitudes(axis_amplitudes):
+        """合并多个方向的幅度数据。
+
+        - 若检测到负值，按 dB 量处理：先转线性功率求和，再转回 dB。
+        - 否则按线性幅度处理：使用向量模值 sqrt(x^2 + y^2 + ...)。
+        """
+        if not axis_amplitudes:
+            return None
+        if len(axis_amplitudes) == 1:
+            return axis_amplitudes[0]
+
+        amp_matrix = np.vstack(axis_amplitudes)
+        if np.any(amp_matrix < 0):
+            power_sum = np.sum(np.power(10.0, amp_matrix / 10.0), axis=0)
+            safe_power = np.maximum(power_sum, np.finfo(float).tiny)
+            return 10.0 * np.log10(safe_power)
+
+        return np.sqrt(np.sum(np.square(amp_matrix), axis=0))
+
     def init_tab1(self):
         layout = QVBoxLayout()
 
@@ -393,7 +413,7 @@ class DataViewer(QWidget):
                 values.append(self.data[key].iloc[idx, 1:].to_numpy(dtype=float))
             if not values:
                 return None, None
-            merged = values[0] if len(values) == 1 else np.sum(values, axis=0)
+            merged = self._merge_axis_amplitudes(values)
             return float(np.min(merged)), float(np.max(merged))
 
         if sel_dir in ["X", "Y", "Z"]:
@@ -646,7 +666,7 @@ class DataViewer(QWidget):
             return
 
         labels = list(next(iter(self.data.values())).columns[1:])
-        merged_amp = axis_values[0][1] if len(axis_values) == 1 else np.sum([amp for _, amp in axis_values], axis=0)
+        merged_amp = self._merge_axis_amplitudes([amp for _, amp in axis_values])
         merged_grid = self._values_to_grid(labels, merged_amp)
         if merged_grid is None:
             grid_rows, grid_cols = self._get_grid_shape(labels)
