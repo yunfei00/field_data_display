@@ -248,6 +248,18 @@ class DataViewer(QWidget):
         self.cmap_combo.currentIndexChanged.connect(self.update_plot)
         dir_layout.addWidget(self.cmap_combo)
 
+        dir_layout.addWidget(QLabel("幅值最小:"))
+        self.amp_min_edit = QLineEdit()
+        self.amp_min_edit.setPlaceholderText("自动")
+        self.amp_min_edit.returnPressed.connect(self.update_plot)
+        dir_layout.addWidget(self.amp_min_edit)
+
+        dir_layout.addWidget(QLabel("幅值最大:"))
+        self.amp_max_edit = QLineEdit()
+        self.amp_max_edit.setPlaceholderText("自动")
+        self.amp_max_edit.returnPressed.connect(self.update_plot)
+        dir_layout.addWidget(self.amp_max_edit)
+
         layout.addLayout(dir_layout)
 
         self.amp_stats_label = QLabel("幅度统计: -")
@@ -403,6 +415,7 @@ class DataViewer(QWidget):
         self.freq_edit.setText(f"{freq_val / 1e9:.6g}")
         sel_dir = self.dir_combo.currentText()
         cmap_name = self.cmap_combo.currentText() or self.default_colormap
+        amp_vmin, amp_vmax = self._parse_amp_limits()
 
         # 组装数据
         df = None
@@ -426,7 +439,7 @@ class DataViewer(QWidget):
             return
 
         if self.data_mode == "amplitude":
-            self.update_plot_amplitude(idx, sel_dir, freq_val, cmap_name)
+            self.update_plot_amplitude(idx, sel_dir, freq_val, cmap_name, amp_vmin, amp_vmax)
             return
 
         if len(self.trace_pairs) < 2:
@@ -474,6 +487,12 @@ class DataViewer(QWidget):
             ph2_grid = ph2.reshape(grid_rows, grid_cols)
 
         self.fig.clear()
+        raw_amp1 = amp1.copy()
+        raw_amp2 = amp2.copy()
+        if amp_vmin is not None or amp_vmax is not None:
+            amp1_grid = np.clip(amp1_grid, amp_vmin, amp_vmax)
+            amp2_grid = np.clip(amp2_grid, amp_vmin, amp_vmax)
+
         titles = [
             f"{trace1_name} 幅度",
             f"{trace1_name} 相位",
@@ -483,7 +502,10 @@ class DataViewer(QWidget):
         datas = [amp1_grid, ph1_grid, amp2_grid, ph2_grid]
         for i, (data, t) in enumerate(zip(datas, titles), 1):
             ax = self.fig.add_subplot(2, 2, i)
-            im = ax.imshow(data, aspect='auto', cmap=cmap_name)
+            if "幅度" in t:
+                im = ax.imshow(data, aspect='auto', cmap=cmap_name, vmin=amp_vmin, vmax=amp_vmax)
+            else:
+                im = ax.imshow(data, aspect='auto', cmap=cmap_name)
             self.fig.colorbar(im, ax=ax)
             ax.set_title(t)
         self.fig.suptitle(f"{sel_dir}方向 @ {self._format_frequency(freq_val)}")
@@ -492,14 +514,13 @@ class DataViewer(QWidget):
         self.amp_stats_label.setText(
             self._format_amplitude_stats(
                 [
-                    (trace1_name, amp1),
-                    (trace2_name, amp2),
-                    ("整体", np.maximum(amp1, amp2)),
+                    (trace1_name, raw_amp1),
+                    (trace2_name, raw_amp2),
                 ]
             )
         )
 
-    def update_plot_amplitude(self, idx, sel_dir, freq_val, cmap_name):
+    def update_plot_amplitude(self, idx, sel_dir, freq_val, cmap_name, amp_vmin=None, amp_vmax=None):
         """绘制频谱扫描幅度格式（frequency + 点位列）数据。"""
         axis_values = []
         for axis in sel_dir:
@@ -507,39 +528,60 @@ class DataViewer(QWidget):
             if key not in self.data:
                 continue
             values = self.data[key].iloc[idx, 1:].to_numpy(dtype=float)
-            axis_values.append(values)
+            axis_values.append((axis, values))
 
         if not axis_values:
             self.log_box.append(f"未找到方向 {sel_dir} 对应的数据")
             self.amp_stats_label.setText("幅度统计: -")
             return
 
-        if len(axis_values) == 1:
-            amp = axis_values[0]
-        else:
-            amp = np.sqrt(np.sum(np.square(np.vstack(axis_values)), axis=0))
-
         labels = list(next(iter(self.data.values())).columns[1:])
-        amp_grid = self._values_to_grid(labels, amp)
-        if amp_grid is None:
-            grid_rows, grid_cols = self._get_grid_shape(labels)
-            if grid_rows * grid_cols != len(amp):
-                self.log_box.append("无法推断网格尺寸，按单行展示")
-                grid_rows, grid_cols = 1, len(amp)
-            amp_grid = amp.reshape(grid_rows, grid_cols)
+        axis_grids = []
+        for axis, amp in axis_values:
+            amp_grid = self._values_to_grid(labels, amp)
+            if amp_grid is None:
+                grid_rows, grid_cols = self._get_grid_shape(labels)
+                if grid_rows * grid_cols != len(amp):
+                    self.log_box.append("无法推断网格尺寸，按单行展示")
+                    grid_rows, grid_cols = 1, len(amp)
+                amp_grid = amp.reshape(grid_rows, grid_cols)
+            if amp_vmin is not None or amp_vmax is not None:
+                amp_grid = np.clip(amp_grid, amp_vmin, amp_vmax)
+            axis_grids.append((axis, amp, amp_grid))
 
         self.fig.clear()
-        ax = self.fig.add_subplot(1, 1, 1)
-        im = ax.imshow(amp_grid, aspect='auto', cmap=cmap_name)
-        self.fig.colorbar(im, ax=ax)
-        ax.set_title("幅度")
+        for i, (axis, _, amp_grid) in enumerate(axis_grids, 1):
+            ax = self.fig.add_subplot(1, len(axis_grids), i)
+            im = ax.imshow(amp_grid, aspect='auto', cmap=cmap_name, vmin=amp_vmin, vmax=amp_vmax)
+            self.fig.colorbar(im, ax=ax)
+            ax.set_title(f"{axis}方向 幅度")
         self.fig.suptitle(f"{sel_dir}方向 @ {self._format_frequency(freq_val)}")
         self.canvas.draw()
         self.amp_stats_label.setText(
             self._format_amplitude_stats([
-                (f"{sel_dir}方向", amp)
+                (f"{axis}方向", amp) for axis, amp, _ in axis_grids
             ])
         )
+
+    def _parse_amp_limits(self):
+        """解析用户输入的幅值上下限，失败时退回自动范围。"""
+        try:
+            amp_vmin = float(self.amp_min_edit.text()) if self.amp_min_edit.text().strip() else None
+        except ValueError:
+            self.log_box.append("幅值最小输入无效，已使用自动范围")
+            amp_vmin = None
+
+        try:
+            amp_vmax = float(self.amp_max_edit.text()) if self.amp_max_edit.text().strip() else None
+        except ValueError:
+            self.log_box.append("幅值最大输入无效，已使用自动范围")
+            amp_vmax = None
+
+        if amp_vmin is not None and amp_vmax is not None and amp_vmin > amp_vmax:
+            self.log_box.append("幅值最小大于最大，已交换两者")
+            amp_vmin, amp_vmax = amp_vmax, amp_vmin
+
+        return amp_vmin, amp_vmax
 
     def refresh_direction_options(self):
         """根据已加载方向动态更新可选场方向组合。"""
