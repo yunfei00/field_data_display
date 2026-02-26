@@ -9,11 +9,11 @@ import pandas as pd
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QLineEdit, QFileDialog, QTextEdit, QTabWidget, QComboBox,
-    QDialog
 )
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import matplotlib
+import matplotlib.pyplot as plt
 
 # ✅ 设置中文字体（Windows常用）
 matplotlib.rcParams['font.sans-serif'] = ['SimHei']    # 黑体
@@ -35,7 +35,7 @@ class DataViewer(QWidget):
         self.data_mode = None
         self.default_colormap = "jet"
         self.current_plot_items = []
-        self.standalone_windows = []
+        self.standalone_figures = []
 
         self.tabs = QTabWidget()
         self.tab1 = QWidget()  # 数据加载
@@ -702,7 +702,7 @@ class DataViewer(QWidget):
         self.plot_selector.blockSignals(False)
 
     def open_standalone_plot(self):
-        """按当前选择的编号独立弹出单张子图。"""
+        """按当前选择的编号使用 matplotlib 默认窗口独立弹出单张子图。"""
         if not self.current_plot_items:
             self.log_box.append("当前没有可独立绘制的子图")
             return
@@ -713,16 +713,8 @@ class DataViewer(QWidget):
             return
 
         item = self.current_plot_items[selected_idx]
-        dialog = QDialog(self)
-        dialog.setWindowTitle(f"独立绘图 - {item['index']} {item['title']}")
-        dialog.resize(900, 700)
-
-        layout = QVBoxLayout(dialog)
-        fig = Figure(figsize=(8, 6))
-        canvas = FigureCanvas(fig)
-        layout.addWidget(canvas)
-
-        ax = fig.add_subplot(111)
+        fig, ax = plt.subplots(figsize=(8, 6))
+        fig.canvas.manager.set_window_title(f"独立绘图 - {item['index']} {item['title']}")
         im = ax.imshow(
             item["data"],
             aspect='auto',
@@ -733,12 +725,18 @@ class DataViewer(QWidget):
         fig.colorbar(im, ax=ax)
         ax.set_title(item["title"])
         fig.suptitle(item["suptitle"])
-        canvas.draw()
+        fig.tight_layout()
 
-        self.standalone_windows.append(dialog)
-        dialog.finished.connect(lambda _: self.standalone_windows.remove(dialog) if dialog in self.standalone_windows else None)
-        dialog.show()
-        self.log_box.append(f"已独立绘制子图: {item['index']} - {item['title']}")
+        self.standalone_figures.append(fig)
+
+        def _on_close(_event, closed_fig=fig):
+            if closed_fig in self.standalone_figures:
+                self.standalone_figures.remove(closed_fig)
+
+        fig.canvas.mpl_connect("close_event", _on_close)
+        plt.show(block=False)
+
+        self.log_box.append(f"已使用 Matplotlib 默认窗口独立绘制子图: {item['index']} - {item['title']}")
 
     def _parse_amp_limits(self):
         """解析用户输入的幅值上下限，失败时退回自动范围。"""
