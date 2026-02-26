@@ -198,6 +198,14 @@ class DataViewer(QWidget):
 
         return np.sqrt(np.sum(np.square(amp_matrix), axis=0))
 
+    def log(self, message):
+        """统一日志输出，兼容界面未完全初始化的阶段。"""
+        text = str(message)
+        if hasattr(self, "log_box") and self.log_box is not None:
+            self.log_box.append(text)
+        else:
+            print(text)
+
     def init_tab1(self):
         layout = QVBoxLayout()
 
