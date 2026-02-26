@@ -250,6 +250,9 @@ class DataViewer(QWidget):
 
         layout.addLayout(dir_layout)
 
+        self.amp_stats_label = QLabel("幅度统计: -")
+        layout.addWidget(self.amp_stats_label)
+
         # Matplotlib画布
         self.fig = Figure(figsize=(10, 8))
         self.canvas = FigureCanvas(self.fig)
@@ -419,6 +422,7 @@ class DataViewer(QWidget):
             df = combined
         if df is None:
             self.log_box.append(f"未找到方向 {sel_dir} 对应的数据")
+            self.amp_stats_label.setText("幅度统计: -")
             return
 
         if self.data_mode == "amplitude":
@@ -427,6 +431,7 @@ class DataViewer(QWidget):
 
         if len(self.trace_pairs) < 2:
             self.log_box.append("当前数据至少需要两组 trace（含 re/im）")
+            self.amp_stats_label.setText("幅度统计: -")
             return
 
         trace1_name = self.trace_pairs[0]
@@ -438,6 +443,7 @@ class DataViewer(QWidget):
 
         if trace1_re.empty or trace1_im.empty or trace2_re.empty or trace2_im.empty:
             self.log_box.append(f"数据缺少 {trace1_name}/{trace2_name} 的实部或虚部")
+            self.amp_stats_label.setText("幅度统计: -")
             return
 
         re1 = trace1_re.iloc[:, idx + 1].to_numpy()
@@ -483,6 +489,16 @@ class DataViewer(QWidget):
         self.fig.suptitle(f"{sel_dir}方向 @ {self._format_frequency(freq_val)}")
         self.canvas.draw()
 
+        self.amp_stats_label.setText(
+            self._format_amplitude_stats(
+                [
+                    (trace1_name, amp1),
+                    (trace2_name, amp2),
+                    ("整体", np.maximum(amp1, amp2)),
+                ]
+            )
+        )
+
     def update_plot_amplitude(self, idx, sel_dir, freq_val, cmap_name):
         """绘制频谱扫描幅度格式（frequency + 点位列）数据。"""
         axis_values = []
@@ -495,6 +511,7 @@ class DataViewer(QWidget):
 
         if not axis_values:
             self.log_box.append(f"未找到方向 {sel_dir} 对应的数据")
+            self.amp_stats_label.setText("幅度统计: -")
             return
 
         if len(axis_values) == 1:
@@ -518,6 +535,11 @@ class DataViewer(QWidget):
         ax.set_title("幅度")
         self.fig.suptitle(f"{sel_dir}方向 @ {self._format_frequency(freq_val)}")
         self.canvas.draw()
+        self.amp_stats_label.setText(
+            self._format_amplitude_stats([
+                (f"{sel_dir}方向", amp)
+            ])
+        )
 
     def refresh_direction_options(self):
         """根据已加载方向动态更新可选场方向组合。"""
@@ -585,6 +607,20 @@ class DataViewer(QWidget):
 
         labels = df.iloc[:, 0].astype(str)
         return df[labels.map(_matched)]
+
+    @staticmethod
+    def _format_amplitude_stats(items):
+        """格式化多个幅度数据的最小值/最大值信息。"""
+        stats = []
+        for name, values in items:
+            arr = np.asarray(values, dtype=float)
+            if arr.size == 0:
+                continue
+            stats.append(f"{name} min={np.min(arr):.6g}, max={np.max(arr):.6g}")
+
+        if not stats:
+            return "幅度统计: -"
+        return "幅度统计 | " + " | ".join(stats)
 
 
 if __name__ == "__main__":
