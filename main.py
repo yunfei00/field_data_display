@@ -260,6 +260,10 @@ class DataViewer(QWidget):
         self.amp_max_edit.returnPressed.connect(self.update_plot)
         dir_layout.addWidget(self.amp_max_edit)
 
+        self.amp_reset_btn = QPushButton("重置幅值")
+        self.amp_reset_btn.clicked.connect(self.reset_amp_limits)
+        dir_layout.addWidget(self.amp_reset_btn)
+
         layout.addLayout(dir_layout)
 
         self.amp_stats_label = QLabel("幅度统计: -")
@@ -648,6 +652,28 @@ class DataViewer(QWidget):
             amp_vmin, amp_vmax = amp_vmax, amp_vmin
 
         return amp_vmin, amp_vmax
+
+    def reset_amp_limits(self):
+        """重置幅值上下限为当前频点和方向下的原始范围。"""
+        if self.freqs is None or self.sorted_idx is None or len(self.sorted_idx) == 0:
+            self.amp_min_edit.clear()
+            self.amp_max_edit.clear()
+            self.log_box.append("暂无可重置的幅值范围")
+            return
+
+        idx = int(self.sorted_idx[self.current_sorted_pos])
+        sel_dir = self.dir_combo.currentText() or "X"
+        amp_min, amp_max = self._get_amplitude_limits(idx, sel_dir)
+        if amp_min is None or amp_max is None:
+            self.amp_min_edit.clear()
+            self.amp_max_edit.clear()
+            self.log_box.append("当前方向无法计算幅值范围，已恢复自动")
+        else:
+            self.amp_min_edit.setText(f"{amp_min:.6g}")
+            self.amp_max_edit.setText(f"{amp_max:.6g}")
+            self.log_box.append("已重置为当前频点的初始幅值范围")
+
+        self.update_plot(use_input=False)
 
     def refresh_direction_options(self):
         """根据已加载方向动态更新可选场方向组合。"""
