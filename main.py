@@ -393,7 +393,7 @@ class DataViewer(QWidget):
                 values.append(self.data[key].iloc[idx, 1:].to_numpy(dtype=float))
             if not values:
                 return None, None
-            merged = np.concatenate(values)
+            merged = values[0] if len(values) == 1 else np.sum(values, axis=0)
             return float(np.min(merged)), float(np.max(merged))
 
         if sel_dir in ["X", "Y", "Z"]:
@@ -646,41 +646,40 @@ class DataViewer(QWidget):
             return
 
         labels = list(next(iter(self.data.values())).columns[1:])
-        axis_grids = []
-        for axis, amp in axis_values:
-            amp_grid = self._values_to_grid(labels, amp)
-            if amp_grid is None:
-                grid_rows, grid_cols = self._get_grid_shape(labels)
-                if grid_rows * grid_cols != len(amp):
-                    self.log_box.append("无法推断网格尺寸，按单行展示")
-                    grid_rows, grid_cols = 1, len(amp)
-                amp_grid = amp.reshape(grid_rows, grid_cols)
-            if amp_vmin is not None or amp_vmax is not None:
-                amp_grid = np.clip(amp_grid, amp_vmin, amp_vmax)
-            axis_grids.append((axis, amp, amp_grid))
+        merged_amp = axis_values[0][1] if len(axis_values) == 1 else np.sum([amp for _, amp in axis_values], axis=0)
+        merged_grid = self._values_to_grid(labels, merged_amp)
+        if merged_grid is None:
+            grid_rows, grid_cols = self._get_grid_shape(labels)
+            if grid_rows * grid_cols != len(merged_amp):
+                self.log_box.append("无法推断网格尺寸，按单行展示")
+                grid_rows, grid_cols = 1, len(merged_amp)
+            merged_grid = merged_amp.reshape(grid_rows, grid_cols)
+
+        draw_grid = merged_grid
+        if amp_vmin is not None or amp_vmax is not None:
+            draw_grid = np.clip(merged_grid, amp_vmin, amp_vmax)
 
         self.fig.clear()
         self.current_plot_items = []
-        for i, (axis, _, amp_grid) in enumerate(axis_grids, 1):
-            self.current_plot_items.append({
-                "index": i,
-                "title": f"{axis}方向 幅度",
-                "data": np.array(amp_grid, copy=True),
-                "cmap": cmap_name,
-                "vmin": amp_vmin,
-                "vmax": amp_vmax,
-                "suptitle": f"{sel_dir}方向 @ {self._format_frequency(freq_val)}"
-            })
-            ax = self.fig.add_subplot(1, len(axis_grids), i)
-            im = ax.imshow(amp_grid, aspect='auto', cmap=cmap_name, vmin=amp_vmin, vmax=amp_vmax)
-            self.fig.colorbar(im, ax=ax)
-            ax.set_title(f"{axis}方向 幅度")
+        self.current_plot_items.append({
+            "index": 1,
+            "title": f"{sel_dir}方向 合并幅度",
+            "data": np.array(draw_grid, copy=True),
+            "cmap": cmap_name,
+            "vmin": amp_vmin,
+            "vmax": amp_vmax,
+            "suptitle": f"{sel_dir}方向 @ {self._format_frequency(freq_val)}"
+        })
+        ax = self.fig.add_subplot(1, 1, 1)
+        im = ax.imshow(draw_grid, aspect='auto', cmap=cmap_name, vmin=amp_vmin, vmax=amp_vmax)
+        self.fig.colorbar(im, ax=ax)
+        ax.set_title(f"{sel_dir}方向 合并幅度")
         self.fig.suptitle(f"{sel_dir}方向 @ {self._format_frequency(freq_val)}")
         self.canvas.draw()
         self._refresh_plot_selector()
         self.amp_stats_label.setText(
             self._format_amplitude_stats([
-                (f"{axis}方向", amp) for axis, amp, _ in axis_grids
+                (f"{sel_dir}方向 合并", merged_amp)
             ])
         )
 
