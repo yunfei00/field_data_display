@@ -28,7 +28,7 @@ matplotlib.rcParams['axes.unicode_minus'] = False      # 正常显示负号
 class DataViewer(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"磁场数据工具 [{APP_TAG}] {APP_VERSION}")
+        self.setWindowTitle(f"磁场数据工具 {APP_VERSION}")
         self.resize(1200, 800)
 
         self.data = {}  # 存放 Hx/Hy/Hz
