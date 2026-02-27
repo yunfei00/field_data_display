@@ -67,9 +67,20 @@ class DataViewer(QWidget):
 
     @staticmethod
     def _validate_loaded_data(data_dict):
-        """校验多个方向数据的列和行标签是否一致。"""
+        """校验多方向数据是否可合并。"""
         if not data_dict:
             return True, ""
+
+        def _count_trace_parts(labels):
+            counts = {}
+            for raw in labels.astype(str):
+                parsed = DataViewer._parse_trace_label(raw)
+                if parsed is None:
+                    key = ("__raw__", "__raw__")
+                else:
+                    key = parsed
+                counts[key] = counts.get(key, 0) + 1
+            return counts
 
         items = list(data_dict.items())
         base_name, base_df = items[0]
@@ -78,7 +89,10 @@ class DataViewer(QWidget):
 
         base_first_col = base_df.iloc[:, 0]
         base_is_freq_rows = pd.to_numeric(base_first_col, errors="coerce").notna().all()
-        base_labels = base_first_col.astype(str).tolist()
+
+        base_freq_cols = pd.to_numeric(base_df.columns[1:], errors="coerce")
+        base_freq_cols_numeric = base_freq_cols.notna().all()
+        base_trace_counts = _count_trace_parts(base_first_col)
 
         for name, df in items[1:]:
             if df.shape[0] != base_df.shape[0]:
@@ -104,10 +118,20 @@ class DataViewer(QWidget):
                     # 坐标统一使用首个文件（通常为 Hx）的标签。
                     continue
             else:
-                if list(df.columns) != base_cols:
+                if len(df.columns) - 1 != len(base_cols) - 1:
+                    return False, f"{name} 与 {base_name} 的频率点个数不一致"
+
+                cur_freq_cols = pd.to_numeric(df.columns[1:], errors="coerce")
+                cur_freq_cols_numeric = cur_freq_cols.notna().all()
+                if base_freq_cols_numeric and cur_freq_cols_numeric:
+                    if not np.allclose(base_freq_cols.to_numpy(dtype=float), cur_freq_cols.to_numpy(dtype=float)):
+                        return False, f"{name} 与 {base_name} 的频率列不一致"
+                elif list(df.columns) != base_cols:
                     return False, f"{name} 与 {base_name} 的频率列不一致"
-                if current_first_col.astype(str).tolist() != base_labels:
-                    return False, f"{name} 与 {base_name} 的采样标签顺序不一致"
+
+                cur_trace_counts = _count_trace_parts(current_first_col)
+                if cur_trace_counts != base_trace_counts:
+                    return False, f"{name} 与 {base_name} 的采样数据个数不一致"
 
         return True, ""
 
@@ -242,6 +266,10 @@ class DataViewer(QWidget):
             return None
         if len(axis_amplitudes) == 1:
             return axis_amplitudes[0]
+
+        lengths = [np.asarray(arr).size for arr in axis_amplitudes]
+        if len(set(lengths)) != 1:
+            raise ValueError(f"采样点个数不一致: {lengths}")
 
         amp_matrix = np.vstack(axis_amplitudes)
         if np.any(amp_matrix < 0):
@@ -488,7 +516,11 @@ class DataViewer(QWidget):
                 values.append(self.data[key].iloc[idx, 1:].to_numpy(dtype=float))
             if not values:
                 return None, None
-            merged = self._merge_axis_amplitudes(values)
+            try:
+                merged = self._merge_axis_amplitudes(values)
+            except ValueError as e:
+                self.log_box.append(f"合并幅度失败: {e}")
+                return None, None
             return float(np.min(merged)), float(np.max(merged))
 
         if sel_dir in ["X", "Y", "Z"]:
@@ -754,7 +786,12 @@ class DataViewer(QWidget):
             return
 
         labels = list(next(iter(self.data.values())).columns[1:])
-        merged_amp = self._merge_axis_amplitudes([amp for _, amp in axis_values])
+        try:
+            merged_amp = self._merge_axis_amplitudes([amp for _, amp in axis_values])
+        except ValueError as e:
+            self.log_box.append(f"合并方向 {sel_dir} 幅度失败: {e}")
+            self.amp_stats_label.setText("幅度统计: -")
+            return
         grid_extent = self._get_grid_extent(labels)
         merged_grid = self._values_to_grid(labels, merged_amp)
         if merged_grid is None:
