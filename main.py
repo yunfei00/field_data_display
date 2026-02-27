@@ -311,6 +311,14 @@ class DataViewer(QWidget):
         self.cmap_combo.currentIndexChanged.connect(lambda _: self.update_plot(sync_amp_limits=False))
         dir_layout.addWidget(self.cmap_combo)
 
+        dir_layout.addWidget(QLabel("原点位置:"))
+        self.origin_combo = QComboBox()
+        self.origin_combo.addItem("左上角", "upper")
+        self.origin_combo.addItem("左下角", "lower")
+        self.origin_combo.setCurrentIndex(0)
+        self.origin_combo.currentIndexChanged.connect(lambda _: self.update_plot(sync_amp_limits=False))
+        dir_layout.addWidget(self.origin_combo)
+
         dir_layout.addWidget(QLabel("幅值最小:"))
         self.amp_min_edit = QLineEdit()
         self.amp_min_edit.setPlaceholderText("自动")
@@ -558,6 +566,7 @@ class DataViewer(QWidget):
         self.freq_edit.setText(f"{freq_val / 1e9:.6g}")
         sel_dir = self.dir_combo.currentText()
         cmap_name = self.cmap_combo.currentText() or self.default_colormap
+        origin_mode = self.origin_combo.currentData() or "upper"
 
         # 仅在频点/方向切换时同步幅值范围，避免覆盖用户手动输入。
         if sync_amp_limits:
@@ -586,7 +595,7 @@ class DataViewer(QWidget):
             return
 
         if self.data_mode == "amplitude":
-            self.update_plot_amplitude(idx, sel_dir, freq_val, cmap_name, amp_vmin, amp_vmax)
+            self.update_plot_amplitude(idx, sel_dir, freq_val, cmap_name, origin_mode, amp_vmin, amp_vmax)
             return
 
         if not self.trace_pairs:
@@ -660,6 +669,7 @@ class DataViewer(QWidget):
                 "data": np.array(data, copy=True),
                 "extent": extent,
                 "cmap": cmap_name,
+                "origin": origin_mode,
                 "vmin": amp_vmin if is_amp else None,
                 "vmax": amp_vmax if is_amp else None,
                 "suptitle": f"{sel_dir}方向 @ {self._format_frequency(freq_val)}"
@@ -672,10 +682,10 @@ class DataViewer(QWidget):
                     vmin=amp_vmin,
                     vmax=amp_vmax,
                     extent=extent,
-                    origin='lower'
+                    origin=origin_mode
                 )
             else:
-                im = ax.imshow(data, cmap=cmap_name, extent=extent, origin='lower')
+                im = ax.imshow(data, cmap=cmap_name, extent=extent, origin=origin_mode)
             ax.set_aspect('equal' if extent is not None else 'auto', adjustable='box')
             self.fig.colorbar(im, ax=ax)
             ax.set_title(t)
@@ -700,7 +710,7 @@ class DataViewer(QWidget):
         self.amp_min_edit.setText(f"{amp_min:.6g}")
         self.amp_max_edit.setText(f"{amp_max:.6g}")
 
-    def update_plot_amplitude(self, idx, sel_dir, freq_val, cmap_name, amp_vmin=None, amp_vmax=None):
+    def update_plot_amplitude(self, idx, sel_dir, freq_val, cmap_name, origin_mode, amp_vmin=None, amp_vmax=None):
         """绘制频谱扫描幅度格式（frequency + 点位列）数据。"""
         axis_values = []
         for axis in sel_dir:
@@ -738,6 +748,7 @@ class DataViewer(QWidget):
             "data": np.array(draw_grid, copy=True),
             "extent": grid_extent,
             "cmap": cmap_name,
+            "origin": origin_mode,
             "vmin": amp_vmin,
             "vmax": amp_vmax,
             "suptitle": f"{sel_dir}方向 @ {self._format_frequency(freq_val)}"
@@ -749,7 +760,7 @@ class DataViewer(QWidget):
             vmin=amp_vmin,
             vmax=amp_vmax,
             extent=grid_extent,
-            origin='lower'
+            origin=origin_mode
         )
         ax.set_aspect('equal' if grid_extent is not None else 'auto', adjustable='box')
         self.fig.colorbar(im, ax=ax)
@@ -800,7 +811,7 @@ class DataViewer(QWidget):
             vmin=item["vmin"],
             vmax=item["vmax"],
             extent=item.get("extent"),
-            origin='lower'
+            origin=item.get("origin", "upper")
         )
         ax.set_aspect('equal' if item.get("extent") is not None else 'auto', adjustable='box')
         fig.colorbar(im, ax=ax)
