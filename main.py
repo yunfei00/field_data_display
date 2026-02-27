@@ -210,6 +210,17 @@ class DataViewer(QWidget):
         ax.set_aspect('equal' if extent is not None else 'auto', adjustable='box')
 
     @staticmethod
+    def _resolve_extent_by_origin(extent, origin_mode):
+        """将坐标范围与 origin 协同处理，确保上下原点切换时 y 值语义正确。"""
+        if extent is None:
+            return None
+
+        x0, x1, y0, y1 = extent
+        if origin_mode == "upper":
+            return [x0, x1, y1, y0]
+        return [x0, x1, y0, y1]
+
+    @staticmethod
     def _merge_axis_amplitudes(axis_amplitudes):
         """合并多个方向的幅度数据。
 
@@ -668,11 +679,12 @@ class DataViewer(QWidget):
 
         for i, (t, data, extent) in enumerate(plot_specs, 1):
             is_amp = "幅度" in t
+            display_extent = self._resolve_extent_by_origin(extent, origin_mode)
             self.current_plot_items.append({
                 "index": i,
                 "title": t,
                 "data": np.array(data, copy=True),
-                "extent": extent,
+                "extent": display_extent,
                 "cmap": cmap_name,
                 "origin": origin_mode,
                 "vmin": amp_vmin if is_amp else None,
@@ -686,12 +698,12 @@ class DataViewer(QWidget):
                     cmap=cmap_name,
                     vmin=amp_vmin,
                     vmax=amp_vmax,
-                    extent=extent,
+                    extent=display_extent,
                     origin=origin_mode
                 )
             else:
-                im = ax.imshow(data, cmap=cmap_name, extent=extent, origin=origin_mode)
-            self._apply_axis_orientation(ax, origin_mode, extent)
+                im = ax.imshow(data, cmap=cmap_name, extent=display_extent, origin=origin_mode)
+            self._apply_axis_orientation(ax, origin_mode, display_extent)
             self.fig.colorbar(im, ax=ax)
             ax.set_title(t)
         self.fig.suptitle(f"{sel_dir}方向 @ {self._format_frequency(freq_val)}")
@@ -747,11 +759,12 @@ class DataViewer(QWidget):
 
         self.fig.clear()
         self.current_plot_items = []
+        display_extent = self._resolve_extent_by_origin(grid_extent, origin_mode)
         self.current_plot_items.append({
             "index": 1,
             "title": f"{sel_dir}方向 合并幅度",
             "data": np.array(draw_grid, copy=True),
-            "extent": grid_extent,
+            "extent": display_extent,
             "cmap": cmap_name,
             "origin": origin_mode,
             "vmin": amp_vmin,
@@ -764,10 +777,10 @@ class DataViewer(QWidget):
             cmap=cmap_name,
             vmin=amp_vmin,
             vmax=amp_vmax,
-            extent=grid_extent,
+            extent=display_extent,
             origin=origin_mode
         )
-        self._apply_axis_orientation(ax, origin_mode, grid_extent)
+        self._apply_axis_orientation(ax, origin_mode, display_extent)
         self.fig.colorbar(im, ax=ax)
         ax.set_title(f"{sel_dir}方向 合并幅度")
         self.fig.suptitle(f"{sel_dir}方向 @ {self._format_frequency(freq_val)}")
