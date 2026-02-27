@@ -205,6 +205,13 @@ class DataViewer(QWidget):
         return [x0, x1, y0, y1]
 
     @staticmethod
+    def _apply_axis_orientation(ax, origin_mode, extent):
+        """根据原点设置同步调整坐标轴方向，确保 y 轴坐标信息与显示一致。"""
+        ax.set_aspect('equal' if extent is not None else 'auto', adjustable='box')
+        if origin_mode == "lower":
+            ax.invert_yaxis()
+
+    @staticmethod
     def _merge_axis_amplitudes(axis_amplitudes):
         """合并多个方向的幅度数据。
 
@@ -686,7 +693,7 @@ class DataViewer(QWidget):
                 )
             else:
                 im = ax.imshow(data, cmap=cmap_name, extent=extent, origin=origin_mode)
-            ax.set_aspect('equal' if extent is not None else 'auto', adjustable='box')
+            self._apply_axis_orientation(ax, origin_mode, extent)
             self.fig.colorbar(im, ax=ax)
             ax.set_title(t)
         self.fig.suptitle(f"{sel_dir}方向 @ {self._format_frequency(freq_val)}")
@@ -762,7 +769,7 @@ class DataViewer(QWidget):
             extent=grid_extent,
             origin=origin_mode
         )
-        ax.set_aspect('equal' if grid_extent is not None else 'auto', adjustable='box')
+        self._apply_axis_orientation(ax, origin_mode, grid_extent)
         self.fig.colorbar(im, ax=ax)
         ax.set_title(f"{sel_dir}方向 合并幅度")
         self.fig.suptitle(f"{sel_dir}方向 @ {self._format_frequency(freq_val)}")
@@ -813,7 +820,7 @@ class DataViewer(QWidget):
             extent=item.get("extent"),
             origin=item.get("origin", "upper")
         )
-        ax.set_aspect('equal' if item.get("extent") is not None else 'auto', adjustable='box')
+        self._apply_axis_orientation(ax, item.get("origin", "upper"), item.get("extent"))
         fig.colorbar(im, ax=ax)
         ax.set_title(item["title"])
         fig.suptitle(item["suptitle"])
