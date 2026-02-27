@@ -178,6 +178,32 @@ class DataViewer(QWidget):
             return None
         return grid
 
+    def _get_grid_extent(self, labels):
+        """根据标签坐标返回 imshow extent，用于按真实坐标比例显示。"""
+        coords = [self._extract_xy(label) for label in labels]
+        if any(c is None for c in coords):
+            return None
+
+        unique_x = sorted({x for x, _ in coords})
+        unique_y = sorted({y for _, y in coords})
+        if len(unique_x) * len(unique_y) != len(coords):
+            return None
+
+        def _axis_bounds(axis_values):
+            if len(axis_values) == 1:
+                v = float(axis_values[0])
+                return v - 0.5, v + 0.5
+
+            values = np.array(axis_values, dtype=float)
+            diffs = np.diff(values)
+            left = values[0] - diffs[0] / 2
+            right = values[-1] + diffs[-1] / 2
+            return float(left), float(right)
+
+        x0, x1 = _axis_bounds(unique_x)
+        y0, y1 = _axis_bounds(unique_y)
+        return [x0, x1, y0, y1]
+
     @staticmethod
     def _merge_axis_amplitudes(axis_amplitudes):
         """合并多个方向的幅度数据。
@@ -603,6 +629,7 @@ class DataViewer(QWidget):
             labels = item["labels"]
             amp_grid = self._values_to_grid(labels, item["amp"])
             phase_grid = self._values_to_grid(labels, item["phase"])
+            grid_extent = self._get_grid_extent(labels)
 
             if amp_grid is None or phase_grid is None:
                 grid_rows, grid_cols = self._get_grid_shape(labels)
@@ -617,20 +644,21 @@ class DataViewer(QWidget):
                 draw_amp_grid = np.clip(amp_grid, amp_vmin, amp_vmax)
 
             plot_specs.extend([
-                (f"{item['name']} 幅度", draw_amp_grid),
-                (f"{item['name']} 相位", phase_grid),
+                (f"{item['name']} 幅度", draw_amp_grid, grid_extent),
+                (f"{item['name']} 相位", phase_grid, grid_extent),
             ])
 
         plot_count = len(plot_specs)
         rows = int(np.ceil(plot_count / 2))
         cols = 1 if plot_count == 1 else 2
 
-        for i, (t, data) in enumerate(plot_specs, 1):
+        for i, (t, data, extent) in enumerate(plot_specs, 1):
             is_amp = "幅度" in t
             self.current_plot_items.append({
                 "index": i,
                 "title": t,
                 "data": np.array(data, copy=True),
+                "extent": extent,
                 "cmap": cmap_name,
                 "vmin": amp_vmin if is_amp else None,
                 "vmax": amp_vmax if is_amp else None,
@@ -638,9 +666,17 @@ class DataViewer(QWidget):
             })
             ax = self.fig.add_subplot(rows, cols, i)
             if is_amp:
-                im = ax.imshow(data, aspect='auto', cmap=cmap_name, vmin=amp_vmin, vmax=amp_vmax)
+                im = ax.imshow(
+                    data,
+                    cmap=cmap_name,
+                    vmin=amp_vmin,
+                    vmax=amp_vmax,
+                    extent=extent,
+                    origin='lower'
+                )
             else:
-                im = ax.imshow(data, aspect='auto', cmap=cmap_name)
+                im = ax.imshow(data, cmap=cmap_name, extent=extent, origin='lower')
+            ax.set_aspect('equal' if extent is not None else 'auto', adjustable='box')
             self.fig.colorbar(im, ax=ax)
             ax.set_title(t)
         self.fig.suptitle(f"{sel_dir}方向 @ {self._format_frequency(freq_val)}")
@@ -681,6 +717,7 @@ class DataViewer(QWidget):
 
         labels = list(next(iter(self.data.values())).columns[1:])
         merged_amp = self._merge_axis_amplitudes([amp for _, amp in axis_values])
+        grid_extent = self._get_grid_extent(labels)
         merged_grid = self._values_to_grid(labels, merged_amp)
         if merged_grid is None:
             grid_rows, grid_cols = self._get_grid_shape(labels)
@@ -699,13 +736,22 @@ class DataViewer(QWidget):
             "index": 1,
             "title": f"{sel_dir}方向 合并幅度",
             "data": np.array(draw_grid, copy=True),
+            "extent": grid_extent,
             "cmap": cmap_name,
             "vmin": amp_vmin,
             "vmax": amp_vmax,
             "suptitle": f"{sel_dir}方向 @ {self._format_frequency(freq_val)}"
         })
         ax = self.fig.add_subplot(1, 1, 1)
-        im = ax.imshow(draw_grid, aspect='auto', cmap=cmap_name, vmin=amp_vmin, vmax=amp_vmax)
+        im = ax.imshow(
+            draw_grid,
+            cmap=cmap_name,
+            vmin=amp_vmin,
+            vmax=amp_vmax,
+            extent=grid_extent,
+            origin='lower'
+        )
+        ax.set_aspect('equal' if grid_extent is not None else 'auto', adjustable='box')
         self.fig.colorbar(im, ax=ax)
         ax.set_title(f"{sel_dir}方向 合并幅度")
         self.fig.suptitle(f"{sel_dir}方向 @ {self._format_frequency(freq_val)}")
@@ -750,11 +796,13 @@ class DataViewer(QWidget):
         fig.canvas.manager.set_window_title(f"独立绘图 - {item['index']} {item['title']}")
         im = ax.imshow(
             item["data"],
-            aspect='auto',
             cmap=item["cmap"],
             vmin=item["vmin"],
-            vmax=item["vmax"]
+            vmax=item["vmax"],
+            extent=item.get("extent"),
+            origin='lower'
         )
+        ax.set_aspect('equal' if item.get("extent") is not None else 'auto', adjustable='box')
         fig.colorbar(im, ax=ax)
         ax.set_title(item["title"])
         fig.suptitle(item["suptitle"])
