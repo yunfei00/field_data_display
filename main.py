@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 
 # 应用基础信息
 APP_TAG = "stable"
-APP_VERSION = "v1.0.0"
+APP_VERSION = "v1.1.0"
 APP_DESCRIPTION = "磁场数据加载、分析与可视化工具"
 
 # ✅ 设置中文字体（Windows常用）
