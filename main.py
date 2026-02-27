@@ -206,13 +206,8 @@ class DataViewer(QWidget):
 
     @staticmethod
     def _apply_axis_orientation(ax, origin_mode, extent):
-        """根据原点设置同步调整坐标轴方向，确保 y 轴坐标信息与显示一致。"""
+        """根据原点设置坐标显示样式，避免与 imshow 的 origin 逻辑重复翻转。"""
         ax.set_aspect('equal' if extent is not None else 'auto', adjustable='box')
-
-        if origin_mode == "upper":
-            ax.invert_yaxis()
-        else:
-            ax.yaxis.set_inverted(False)
 
     @staticmethod
     def _merge_axis_amplitudes(axis_amplitudes):
