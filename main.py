@@ -74,14 +74,13 @@ class DataViewer(QWidget):
         items = list(data_dict.items())
         base_name, base_df = items[0]
         base_cols = list(base_df.columns)
+        base_sample_count = max(base_df.shape[1] - 1, 0)
 
         base_first_col = base_df.iloc[:, 0]
         base_is_freq_rows = pd.to_numeric(base_first_col, errors="coerce").notna().all()
         base_labels = base_first_col.astype(str).tolist()
 
         for name, df in items[1:]:
-            if list(df.columns) != base_cols:
-                return False, f"{name} 与 {base_name} 的频率列不一致"
             if df.shape[0] != base_df.shape[0]:
                 return False, f"{name} 与 {base_name} 的行数不一致"
 
@@ -91,12 +90,24 @@ class DataViewer(QWidget):
                 return False, f"{name} 与 {base_name} 的数据方向不一致"
 
             if base_is_freq_rows:
+                current_sample_count = max(df.shape[1] - 1, 0)
+                if current_sample_count != base_sample_count:
+                    return False, f"{name} 与 {base_name} 的采样点个数不一致"
+
                 base_freq = pd.to_numeric(base_first_col, errors="coerce").to_numpy(dtype=float)
                 cur_freq = pd.to_numeric(current_first_col, errors="coerce").to_numpy(dtype=float)
                 if not np.allclose(base_freq, cur_freq):
                     return False, f"{name} 与 {base_name} 的频率点不一致"
-            elif current_first_col.astype(str).tolist() != base_labels:
-                return False, f"{name} 与 {base_name} 的采样标签顺序不一致"
+
+                if list(df.columns) != base_cols:
+                    # 对扫描幅度格式放宽标签一致性要求：只要点数一致就允许合并，
+                    # 坐标统一使用首个文件（通常为 Hx）的标签。
+                    continue
+            else:
+                if list(df.columns) != base_cols:
+                    return False, f"{name} 与 {base_name} 的频率列不一致"
+                if current_first_col.astype(str).tolist() != base_labels:
+                    return False, f"{name} 与 {base_name} 的采样标签顺序不一致"
 
         return True, ""
 
