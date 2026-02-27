@@ -445,11 +445,11 @@ class DataViewer(QWidget):
                 else:
                     df.iloc[:, 1:] += part_df.iloc[:, 1:]
 
-        if df is None or len(self.trace_pairs) < 2:
+        if df is None or not self.trace_pairs:
             return None, None
 
         amps = []
-        for trace_name in self.trace_pairs[:2]:
+        for trace_name in self.trace_pairs:
             trace_re = self._filter_trace_rows(df, trace_name, "re")
             trace_im = self._filter_trace_rows(df, trace_name, "im")
             if trace_re.empty or trace_im.empty:
@@ -563,66 +563,69 @@ class DataViewer(QWidget):
             self.update_plot_amplitude(idx, sel_dir, freq_val, cmap_name, amp_vmin, amp_vmax)
             return
 
-        if len(self.trace_pairs) < 2:
-            self.log_box.append("当前数据至少需要两组 trace（含 re/im）")
+        if not self.trace_pairs:
+            self.log_box.append("当前数据未识别到可用 trace（含 re/im）")
             self.amp_stats_label.setText("幅度统计: -")
             return
 
-        trace1_name = self.trace_pairs[0]
-        trace2_name = self.trace_pairs[1]
-        trace1_re = self._filter_trace_rows(df, trace1_name, "re")
-        trace1_im = self._filter_trace_rows(df, trace1_name, "im")
-        trace2_re = self._filter_trace_rows(df, trace2_name, "re")
-        trace2_im = self._filter_trace_rows(df, trace2_name, "im")
+        trace_data = []
+        missing_parts = []
+        for trace_name in self.trace_pairs:
+            trace_re = self._filter_trace_rows(df, trace_name, "re")
+            trace_im = self._filter_trace_rows(df, trace_name, "im")
+            if trace_re.empty or trace_im.empty:
+                missing_parts.append(trace_name)
+                continue
 
-        if trace1_re.empty or trace1_im.empty or trace2_re.empty or trace2_im.empty:
-            self.log_box.append(f"数据缺少 {trace1_name}/{trace2_name} 的实部或虚部")
+            re_vals = trace_re.iloc[:, idx + 1].to_numpy(dtype=float)
+            im_vals = trace_im.iloc[:, idx + 1].to_numpy(dtype=float)
+            amp = np.sqrt(re_vals ** 2 + im_vals ** 2)
+            phase = np.angle(re_vals + 1j * im_vals, deg=True)
+            trace_data.append({
+                "name": trace_name,
+                "amp": amp,
+                "phase": phase,
+                "labels": trace_re.iloc[:, 0].to_list()
+            })
+
+        if missing_parts:
+            self.log_box.append(f"以下 trace 缺少实部或虚部，已跳过: {', '.join(missing_parts)}")
+
+        if not trace_data:
+            self.log_box.append("未找到可用于绘图的 trace 数据")
             self.amp_stats_label.setText("幅度统计: -")
             return
-
-        re1 = trace1_re.iloc[:, idx + 1].to_numpy()
-        im1 = trace1_im.iloc[:, idx + 1].to_numpy()
-        re2 = trace2_re.iloc[:, idx + 1].to_numpy()
-        im2 = trace2_im.iloc[:, idx + 1].to_numpy()
-
-        amp1 = np.sqrt(re1 ** 2 + im1 ** 2)
-        amp2 = np.sqrt(re2 ** 2 + im2 ** 2)
-        ph1 = np.angle(re1 + 1j * im1, deg=True)
-        ph2 = np.angle(re2 + 1j * im2, deg=True)
-
-        labels = trace1_re.iloc[:, 0].to_list()
-        amp1_grid = self._values_to_grid(labels, amp1)
-        amp2_grid = self._values_to_grid(labels, amp2)
-        ph1_grid = self._values_to_grid(labels, ph1)
-        ph2_grid = self._values_to_grid(labels, ph2)
-
-        if any(g is None for g in [amp1_grid, amp2_grid, ph1_grid, ph2_grid]):
-            grid_rows, grid_cols = self._get_grid_shape(labels)
-            if grid_rows * grid_cols != len(amp1):
-                self.log_box.append("无法推断网格尺寸，按单行展示")
-                grid_rows, grid_cols = 1, len(amp1)
-
-            amp1_grid = amp1.reshape(grid_rows, grid_cols)
-            amp2_grid = amp2.reshape(grid_rows, grid_cols)
-            ph1_grid = ph1.reshape(grid_rows, grid_cols)
-            ph2_grid = ph2.reshape(grid_rows, grid_cols)
 
         self.fig.clear()
         self.current_plot_items = []
-        raw_amp1 = amp1.copy()
-        raw_amp2 = amp2.copy()
-        if amp_vmin is not None or amp_vmax is not None:
-            amp1_grid = np.clip(amp1_grid, amp_vmin, amp_vmax)
-            amp2_grid = np.clip(amp2_grid, amp_vmin, amp_vmax)
+        plot_specs = []
+        for item in trace_data:
+            labels = item["labels"]
+            amp_grid = self._values_to_grid(labels, item["amp"])
+            phase_grid = self._values_to_grid(labels, item["phase"])
 
-        titles = [
-            f"{trace1_name} 幅度",
-            f"{trace1_name} 相位",
-            f"{trace2_name} 幅度",
-            f"{trace2_name} 相位"
-        ]
-        datas = [amp1_grid, ph1_grid, amp2_grid, ph2_grid]
-        for i, (data, t) in enumerate(zip(datas, titles), 1):
+            if amp_grid is None or phase_grid is None:
+                grid_rows, grid_cols = self._get_grid_shape(labels)
+                if grid_rows * grid_cols != len(item["amp"]):
+                    self.log_box.append("无法推断网格尺寸，按单行展示")
+                    grid_rows, grid_cols = 1, len(item["amp"])
+                amp_grid = item["amp"].reshape(grid_rows, grid_cols)
+                phase_grid = item["phase"].reshape(grid_rows, grid_cols)
+
+            draw_amp_grid = amp_grid
+            if amp_vmin is not None or amp_vmax is not None:
+                draw_amp_grid = np.clip(amp_grid, amp_vmin, amp_vmax)
+
+            plot_specs.extend([
+                (f"{item['name']} 幅度", draw_amp_grid),
+                (f"{item['name']} 相位", phase_grid),
+            ])
+
+        plot_count = len(plot_specs)
+        rows = int(np.ceil(plot_count / 2))
+        cols = 1 if plot_count == 1 else 2
+
+        for i, (t, data) in enumerate(plot_specs, 1):
             is_amp = "幅度" in t
             self.current_plot_items.append({
                 "index": i,
@@ -633,7 +636,7 @@ class DataViewer(QWidget):
                 "vmax": amp_vmax if is_amp else None,
                 "suptitle": f"{sel_dir}方向 @ {self._format_frequency(freq_val)}"
             })
-            ax = self.fig.add_subplot(2, 2, i)
+            ax = self.fig.add_subplot(rows, cols, i)
             if is_amp:
                 im = ax.imshow(data, aspect='auto', cmap=cmap_name, vmin=amp_vmin, vmax=amp_vmax)
             else:
@@ -646,10 +649,7 @@ class DataViewer(QWidget):
 
         self.amp_stats_label.setText(
             self._format_amplitude_stats(
-                [
-                    (trace1_name, raw_amp1),
-                    (trace2_name, raw_amp2),
-                ]
+                [(item["name"], item["amp"]) for item in trace_data]
             )
         )
 
