@@ -208,8 +208,6 @@ class DataViewer(QWidget):
     def _apply_axis_orientation(ax, origin_mode, extent):
         """根据原点设置同步调整坐标轴方向，确保 y 轴坐标信息与显示一致。"""
         ax.set_aspect('equal' if extent is not None else 'auto', adjustable='box')
-        if origin_mode == "lower":
-            ax.invert_yaxis()
 
     @staticmethod
     def _merge_axis_amplitudes(axis_amplitudes):
