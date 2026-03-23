@@ -543,7 +543,7 @@ class DataViewer(QWidget):
         with open(dat_path, "w", encoding="utf-8") as f:
             for row in matrix:
                 f.write(
-                    f"{row[0]:.12e} {row[1]:.12e} {row[2]:.12e} {row[3]:.12e} {row[4]:.12e}\n"
+                    f"{row[0]:.6e} {row[1]:.6e} {row[2]:.6e} {row[3]:.6e} {row[4]:.6e}\n"
                 )
         return dat_path
 
@@ -562,7 +562,7 @@ class DataViewer(QWidget):
             "    <Data>\n"
             "        <Coordinates>xyz</Coordinates>\n"
             "        <Frequencies>\n"
-            f"            <List>{freq_hz:.12e}</List>\n"
+            f"            <List>{int(round(freq_hz))}</List>\n"
             "        </Frequencies>\n"
             "        <Measurement>\n"
             "            <Unit>A/m</Unit>\n"
