@@ -10,6 +10,18 @@ v1.1.0 更新说明:
   - 结果表现：XY（及包含 XY 的组合方向）仍按向量模值 `sqrt(Hx^2 + Hy^2 + ...)` 合成，不因标签差异中断绘图流程。
 - 优化：README 补充了新增兼容能力的触发条件与行为说明，便于发布与使用。
 
+新增工具：CST 导出转 CAT 导入格式（GUI）
+- 在“加载数据”页新增转换区域，支持选择 `e.txt`、`h.txt`。
+- 自动忽略前两行，从第三行开始按一个或多个空格解析数据列。
+- E 场支持列：`x y z ex_re ex_im ey_re ey_im ez_re ez_im`。
+- H 场支持列：`x y z hx_re hx_im hy_re hy_im hz_re hz_im`。
+- 频率由用户手动输入（Hz）。
+- 输出目录可手动选择；若留空，默认输出到输入文件同目录下 `out_xml_dat`。
+- 生成 `.dat` 与 `.xml` 文件：
+  - E 场：`ex/ey/ez.dat` + `ex/ey/ez.xml`
+  - H 场：`hx/hy/hz.dat` + `hx/hy/hz.xml`
+- `.dat` 每行格式：`x y z re im`，坐标单位从 mm 转换为 m。
+
 将matplotlib后台界面嵌入pyside6中。
 
 需求说明:

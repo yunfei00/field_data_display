@@ -327,6 +327,48 @@ class DataViewer(QWidget):
         self.view_btn.clicked.connect(self.load_all_data)
         layout.addWidget(self.view_btn)
 
+        # CST 导出转换工具
+        layout.addWidget(QLabel("CST 导出转 CAT 导入格式:"))
+
+        cst_e_layout = QHBoxLayout()
+        self.cst_e_edit = QLineEdit()
+        cst_e_btn = QPushButton("浏览")
+        cst_e_btn.clicked.connect(lambda: self.browse_text_file(self.cst_e_edit))
+        cst_e_layout.addWidget(QLabel("E 场文件(e.txt):"))
+        cst_e_layout.addWidget(self.cst_e_edit)
+        cst_e_layout.addWidget(cst_e_btn)
+        layout.addLayout(cst_e_layout)
+
+        cst_h_layout = QHBoxLayout()
+        self.cst_h_edit = QLineEdit()
+        cst_h_btn = QPushButton("浏览")
+        cst_h_btn.clicked.connect(lambda: self.browse_text_file(self.cst_h_edit))
+        cst_h_layout.addWidget(QLabel("H 场文件(h.txt):"))
+        cst_h_layout.addWidget(self.cst_h_edit)
+        cst_h_layout.addWidget(cst_h_btn)
+        layout.addLayout(cst_h_layout)
+
+        cst_freq_layout = QHBoxLayout()
+        self.cst_freq_edit = QLineEdit()
+        self.cst_freq_edit.setPlaceholderText("输入频率(Hz)，例如 500000000")
+        cst_freq_layout.addWidget(QLabel("频率(Hz):"))
+        cst_freq_layout.addWidget(self.cst_freq_edit)
+        layout.addLayout(cst_freq_layout)
+
+        cst_out_layout = QHBoxLayout()
+        self.cst_out_edit = QLineEdit()
+        self.cst_out_edit.setPlaceholderText("默认: 输入文件同目录/out_xml_dat")
+        cst_out_btn = QPushButton("输出路径")
+        cst_out_btn.clicked.connect(self.browse_output_dir)
+        cst_out_layout.addWidget(QLabel("输出目录:"))
+        cst_out_layout.addWidget(self.cst_out_edit)
+        cst_out_layout.addWidget(cst_out_btn)
+        layout.addLayout(cst_out_layout)
+
+        self.cst_convert_btn = QPushButton("执行 CST->CAT 转换")
+        self.cst_convert_btn.clicked.connect(self.convert_cst_to_cat)
+        layout.addWidget(self.cst_convert_btn)
+
         # 日志
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
@@ -425,13 +467,33 @@ class DataViewer(QWidget):
             self.last_browse_dir = os.path.dirname(file)
             self.save_config()
 
+    def browse_text_file(self, lineedit):
+        initial_dir = self.last_browse_dir if os.path.isdir(self.last_browse_dir) else self.default_browse_dir
+        file, _ = QFileDialog.getOpenFileName(self, "选择文本文件", initial_dir, "Text Files (*.txt);;All Files (*)")
+        if file:
+            lineedit.setText(file)
+            self.last_browse_dir = os.path.dirname(file)
+            self.save_config()
+
+    def browse_output_dir(self):
+        initial_dir = self.last_browse_dir if os.path.isdir(self.last_browse_dir) else self.default_browse_dir
+        out_dir = QFileDialog.getExistingDirectory(self, "选择输出目录", initial_dir)
+        if out_dir:
+            self.cst_out_edit.setText(out_dir)
+            self.last_browse_dir = out_dir
+            self.save_config()
+
     def save_config(self):
 
         cfg = {
             "xfile": self.xfile_edit.text(),
             "yfile": self.yfile_edit.text(),
             "zfile": self.zfile_edit.text(),
-            "last_browse_dir": self.last_browse_dir
+            "last_browse_dir": self.last_browse_dir,
+            "cst_e_file": self.cst_e_edit.text() if hasattr(self, "cst_e_edit") else "",
+            "cst_h_file": self.cst_h_edit.text() if hasattr(self, "cst_h_edit") else "",
+            "cst_out_dir": self.cst_out_edit.text() if hasattr(self, "cst_out_edit") else "",
+            "cst_freq_hz": self.cst_freq_edit.text() if hasattr(self, "cst_freq_edit") else ""
         }
         with open(self.conf_file, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=4)
@@ -443,8 +505,129 @@ class DataViewer(QWidget):
             self.xfile_edit.setText(cfg.get("xfile", ""))
             self.yfile_edit.setText(cfg.get("yfile", ""))
             self.zfile_edit.setText(cfg.get("zfile", ""))
+            if hasattr(self, "cst_e_edit"):
+                self.cst_e_edit.setText(cfg.get("cst_e_file", ""))
+            if hasattr(self, "cst_h_edit"):
+                self.cst_h_edit.setText(cfg.get("cst_h_file", ""))
+            if hasattr(self, "cst_out_edit"):
+                self.cst_out_edit.setText(cfg.get("cst_out_dir", ""))
+            if hasattr(self, "cst_freq_edit"):
+                self.cst_freq_edit.setText(cfg.get("cst_freq_hz", ""))
             saved_dir = cfg.get("last_browse_dir", self.default_browse_dir)
             self.last_browse_dir = saved_dir if os.path.isdir(saved_dir) else self.default_browse_dir
+
+    @staticmethod
+    def _read_cst_field_file(file_path, expected_components):
+        rows = []
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            lines = f.readlines()
+
+        for line in lines[2:]:
+            text = line.strip()
+            if not text:
+                continue
+            parts = text.split()
+            needed = 3 + 2 * len(expected_components)
+            if len(parts) < needed:
+                raise ValueError(f"{os.path.basename(file_path)} 存在列数不足行: {text}")
+            nums = [float(parts[i]) for i in range(needed)]
+            rows.append(nums)
+
+        if not rows:
+            raise ValueError(f"{os.path.basename(file_path)} 没有可用数据")
+        return np.array(rows, dtype=float)
+
+    @staticmethod
+    def _write_dat_file(out_dir, name, matrix):
+        dat_path = os.path.join(out_dir, f"{name}.dat")
+        with open(dat_path, "w", encoding="utf-8") as f:
+            for row in matrix:
+                f.write(
+                    f"{row[0]:.12g} {row[1]:.12g} {row[2]:.12g} {row[3]:.12g} {row[4]:.12g}\n"
+                )
+        return dat_path
+
+    @staticmethod
+    def _write_xml_file(out_dir, field_name, freq_hz):
+        xml_path = os.path.join(out_dir, f"{field_name.lower()}.xml")
+        xml_text = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            "<EmissionScan>\n"
+            "    <Nfs_ver>1.0</Nfs_ver>\n"
+            f"    <Filename>{field_name.lower()}.xml</Filename>\n"
+            "    <File_ver>1</File_ver>\n"
+            "    <Probe>\n"
+            f"        <Field>{field_name}</Field>\n"
+            "    </Probe>\n"
+            "    <Data>\n"
+            "        <Coordonates>xyz</Coordonates>\n"
+            "        <Frequencies>\n"
+            f"            <List>{freq_hz:.12g}</List>\n"
+            "        </Frequencies>\n"
+            "        <Measurement>\n"
+            "            <Unit>A/m</Unit>\n"
+            "            <Format>ri</Format>\n"
+            f"            <Data_files>{field_name.lower()}.dat</Data_files>\n"
+            "        </Measurement>\n"
+            "    </Data>\n"
+            "</EmissionScan>\n"
+        )
+        with open(xml_path, "w", encoding="utf-8") as f:
+            f.write(xml_text)
+        return xml_path
+
+    def convert_cst_to_cat(self):
+        e_path = self.cst_e_edit.text().strip()
+        h_path = self.cst_h_edit.text().strip()
+        freq_text = self.cst_freq_edit.text().strip()
+
+        if not e_path and not h_path:
+            self.log("请至少选择 e.txt 或 h.txt 文件")
+            return
+        if not freq_text:
+            self.log("请输入频率(Hz)")
+            return
+
+        try:
+            freq_hz = float(freq_text)
+        except ValueError:
+            self.log(f"频率格式错误: {freq_text}")
+            return
+
+        output_dir = self.cst_out_edit.text().strip()
+        if not output_dir:
+            sample_path = e_path or h_path
+            output_dir = os.path.join(os.path.dirname(sample_path), "out_xml_dat")
+            self.cst_out_edit.setText(output_dir)
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        try:
+            outputs = []
+            if e_path:
+                e_data = self._read_cst_field_file(e_path, ["Ex", "Ey", "Ez"])
+                coords_m = e_data[:, :3] / 1000.0  # mm -> m
+                for i, field_name in enumerate(["Ex", "Ey", "Ez"]):
+                    comp = e_data[:, 3 + i * 2: 5 + i * 2]
+                    dat_matrix = np.column_stack((coords_m, comp))
+                    outputs.append(self._write_dat_file(output_dir, field_name.lower(), dat_matrix))
+                    outputs.append(self._write_xml_file(output_dir, field_name, freq_hz))
+
+            if h_path:
+                h_data = self._read_cst_field_file(h_path, ["Hx", "Hy", "Hz"])
+                coords_m = h_data[:, :3] / 1000.0  # mm -> m
+                for i, field_name in enumerate(["Hx", "Hy", "Hz"]):
+                    comp = h_data[:, 3 + i * 2: 5 + i * 2]
+                    dat_matrix = np.column_stack((coords_m, comp))
+                    outputs.append(self._write_dat_file(output_dir, field_name.lower(), dat_matrix))
+                    outputs.append(self._write_xml_file(output_dir, field_name, freq_hz))
+
+            self.save_config()
+            self.log(f"CST 转换完成，输出目录: {output_dir}")
+            for path in outputs:
+                self.log(f"  已生成: {path}")
+        except Exception as e:
+            self.log(f"CST 转换失败: {e}")
 
     def load_all_data(self):
         self.data.clear()
