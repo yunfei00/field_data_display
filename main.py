@@ -68,6 +68,17 @@ class DataViewer(QWidget):
         return f"{freq_hz / 1e9:g} GHz"
 
     @staticmethod
+    def _get_frequency_unit_factor(unit_text):
+        unit_map = {
+            "GHz": 1e9,
+            "MHz": 1e6,
+            "KHz": 1e3,
+            "Kz": 1e3,
+            "Hz": 1.0,
+        }
+        return unit_map.get(unit_text, 1e9)
+
+    @staticmethod
     def _validate_loaded_data(data_dict):
         """校验多方向数据是否可合并。"""
         if not data_dict:
@@ -388,11 +399,17 @@ class DataViewer(QWidget):
         self.dir_combo.currentIndexChanged.connect(lambda _: self.update_plot(sync_amp_limits=True))
         dir_layout.addWidget(self.dir_combo)
 
-        dir_layout.addWidget(QLabel("频率(GHz):"))
+        dir_layout.addWidget(QLabel("频率:"))
         self.freq_edit = QLineEdit()
-        self.freq_edit.setPlaceholderText("输入频率GHz,回车更新")
+        self.freq_edit.setPlaceholderText("输入频率,回车更新")
         self.freq_edit.returnPressed.connect(lambda: self.update_plot(sync_amp_limits=True))
         dir_layout.addWidget(self.freq_edit)
+
+        self.freq_unit_combo = QComboBox()
+        self.freq_unit_combo.addItems(["GHz", "MHz", "KHz", "Kz"])
+        self.freq_unit_combo.setCurrentText("GHz")
+        self.freq_unit_combo.currentIndexChanged.connect(lambda _: self.on_frequency_unit_changed())
+        dir_layout.addWidget(self.freq_unit_combo)
 
         self.freq_up_btn = QPushButton("fre up")
         self.freq_up_btn.clicked.connect(self.move_sorted_frequency_up)
@@ -567,7 +584,9 @@ class DataViewer(QWidget):
             "        <Measurement>\n"
             "            <Unit>A/m</Unit>\n"
             "            <Format>ri</Format>\n"
-            f"            <Data_files>{field_name.lower()}.dat</Data_files>\n"
+            "            <Data_files>\n"
+            f"                {field_name.lower()}.dat\n"
+            "            </Data_files>\n"
             "        </Measurement>\n"
             "    </Data>\n"
             "</EmissionScan>\n"
@@ -791,15 +810,21 @@ class DataViewer(QWidget):
         self.current_sorted_pos = min(len(self.sorted_freqs) - 1, self.current_sorted_pos + 1)
         self.update_plot(use_input=False, sync_amp_limits=True)
 
+    def on_frequency_unit_changed(self):
+        if self.sorted_freqs is None or len(self.sorted_freqs) == 0:
+            return
+        self.update_plot(use_input=False, sync_amp_limits=False)
+
     def update_plot(self, use_input=True, sync_amp_limits=True):
         if self.freqs is None:
             return
 
-        # 从输入框取频率GHz
+        # 从输入框取频率
         if use_input:
             try:
-                freq_ghz = float(self.freq_edit.text())
-                freq_val = freq_ghz * 1e9
+                freq_value = float(self.freq_edit.text())
+                freq_unit = self.freq_unit_combo.currentText()
+                freq_val = freq_value * self._get_frequency_unit_factor(freq_unit)
                 sorted_idx = (np.abs(self.sorted_freqs - freq_val)).argmin()
                 self.current_sorted_pos = int(sorted_idx)
             except ValueError:
@@ -812,7 +837,9 @@ class DataViewer(QWidget):
 
         freq_val = self.sorted_freqs[sorted_idx]
         idx = self.sorted_idx[sorted_idx]
-        self.freq_edit.setText(f"{freq_val / 1e9:.6g}")
+        display_unit = self.freq_unit_combo.currentText()
+        display_factor = self._get_frequency_unit_factor(display_unit)
+        self.freq_edit.setText(f"{freq_val / display_factor:.6g}")
         sel_dir = self.dir_combo.currentText()
         cmap_name = self.cmap_combo.currentText() or self.default_colormap
         origin_mode = self.origin_combo.currentData() or "upper"
