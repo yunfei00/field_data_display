@@ -43,18 +43,23 @@ class DataViewer(QWidget):
         self.standalone_figures = []
         self.default_browse_dir = os.getcwd()
         self.last_browse_dir = self.default_browse_dir
+        self.cst_default_browse_dir = os.getcwd()
+        self.cst_last_browse_dir = self.cst_default_browse_dir
 
         self.tabs = QTabWidget()
         self.tab1 = QWidget()  # 数据加载
         self.tab2 = QWidget()  # 数据展示
+        self.tab3 = QWidget()  # CST 导出转导入
         self.tabs.addTab(self.tab1, "加载数据")
         self.tabs.addTab(self.tab2, "查看数据")
+        self.tabs.addTab(self.tab3, "CST 导出转导入")
 
         main_layout = QVBoxLayout(self)
         main_layout.addWidget(self.tabs)
 
         self.init_tab1()
         self.init_tab2()
+        self.init_tab3()
 
         self.conf_file = os.path.join(os.getcwd(), 'conf.json')
         self.load_config()
@@ -338,48 +343,6 @@ class DataViewer(QWidget):
         self.view_btn.clicked.connect(self.load_all_data)
         layout.addWidget(self.view_btn)
 
-        # CST 导出转换工具
-        layout.addWidget(QLabel("CST 导出转 CAT 导入格式:"))
-
-        cst_e_layout = QHBoxLayout()
-        self.cst_e_edit = QLineEdit()
-        cst_e_btn = QPushButton("浏览")
-        cst_e_btn.clicked.connect(lambda: self.browse_text_file(self.cst_e_edit))
-        cst_e_layout.addWidget(QLabel("E 场文件(e.txt):"))
-        cst_e_layout.addWidget(self.cst_e_edit)
-        cst_e_layout.addWidget(cst_e_btn)
-        layout.addLayout(cst_e_layout)
-
-        cst_h_layout = QHBoxLayout()
-        self.cst_h_edit = QLineEdit()
-        cst_h_btn = QPushButton("浏览")
-        cst_h_btn.clicked.connect(lambda: self.browse_text_file(self.cst_h_edit))
-        cst_h_layout.addWidget(QLabel("H 场文件(h.txt):"))
-        cst_h_layout.addWidget(self.cst_h_edit)
-        cst_h_layout.addWidget(cst_h_btn)
-        layout.addLayout(cst_h_layout)
-
-        cst_freq_layout = QHBoxLayout()
-        self.cst_freq_edit = QLineEdit()
-        self.cst_freq_edit.setPlaceholderText("输入频率(Hz)，例如 500000000")
-        cst_freq_layout.addWidget(QLabel("频率(Hz):"))
-        cst_freq_layout.addWidget(self.cst_freq_edit)
-        layout.addLayout(cst_freq_layout)
-
-        cst_out_layout = QHBoxLayout()
-        self.cst_out_edit = QLineEdit()
-        self.cst_out_edit.setPlaceholderText("默认: 输入文件同目录/out_xml_dat")
-        cst_out_btn = QPushButton("输出路径")
-        cst_out_btn.clicked.connect(self.browse_output_dir)
-        cst_out_layout.addWidget(QLabel("输出目录:"))
-        cst_out_layout.addWidget(self.cst_out_edit)
-        cst_out_layout.addWidget(cst_out_btn)
-        layout.addLayout(cst_out_layout)
-
-        self.cst_convert_btn = QPushButton("执行 CST->CAT 转换")
-        self.cst_convert_btn.clicked.connect(self.convert_cst_to_cat)
-        layout.addWidget(self.cst_convert_btn)
-
         # 日志
         self.log_box = QTextEdit()
         self.log_box.setReadOnly(True)
@@ -476,6 +439,56 @@ class DataViewer(QWidget):
 
         self.tab2.setLayout(layout)
 
+    def init_tab3(self):
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("CST 导出转 CST 导入格式:"))
+
+        cst_e_layout = QHBoxLayout()
+        self.cst_e_edit = QLineEdit()
+        cst_e_btn = QPushButton("浏览")
+        cst_e_btn.clicked.connect(lambda: self.browse_cst_text_file(self.cst_e_edit))
+        cst_e_layout.addWidget(QLabel("E 场文件(e.txt):"))
+        cst_e_layout.addWidget(self.cst_e_edit)
+        cst_e_layout.addWidget(cst_e_btn)
+        layout.addLayout(cst_e_layout)
+
+        cst_h_layout = QHBoxLayout()
+        self.cst_h_edit = QLineEdit()
+        cst_h_btn = QPushButton("浏览")
+        cst_h_btn.clicked.connect(lambda: self.browse_cst_text_file(self.cst_h_edit))
+        cst_h_layout.addWidget(QLabel("H 场文件(h.txt):"))
+        cst_h_layout.addWidget(self.cst_h_edit)
+        cst_h_layout.addWidget(cst_h_btn)
+        layout.addLayout(cst_h_layout)
+
+        cst_freq_layout = QHBoxLayout()
+        self.cst_freq_edit = QLineEdit()
+        self.cst_freq_edit.setPlaceholderText("输入频率，例如 500")
+        cst_freq_layout.addWidget(QLabel("频率:"))
+        cst_freq_layout.addWidget(self.cst_freq_edit)
+        self.cst_freq_unit_combo = QComboBox()
+        self.cst_freq_unit_combo.addItems(["GHz", "MHz", "KHz", "Hz"])
+        self.cst_freq_unit_combo.setCurrentText("MHz")
+        cst_freq_layout.addWidget(self.cst_freq_unit_combo)
+        layout.addLayout(cst_freq_layout)
+
+        cst_out_layout = QHBoxLayout()
+        self.cst_out_edit = QLineEdit()
+        self.cst_out_edit.setPlaceholderText("默认: 输入文件同目录/out_xml_dat")
+        cst_out_btn = QPushButton("输出路径")
+        cst_out_btn.clicked.connect(self.browse_cst_output_dir)
+        cst_out_layout.addWidget(QLabel("输出目录:"))
+        cst_out_layout.addWidget(self.cst_out_edit)
+        cst_out_layout.addWidget(cst_out_btn)
+        layout.addLayout(cst_out_layout)
+
+        self.cst_convert_btn = QPushButton("执行 CST导出->CST导入 转换")
+        self.cst_convert_btn.clicked.connect(self.convert_cst_to_cat)
+        layout.addWidget(self.cst_convert_btn)
+
+        layout.addStretch()
+        self.tab3.setLayout(layout)
+
     def browse_file(self, lineedit):
         initial_dir = self.last_browse_dir if os.path.isdir(self.last_browse_dir) else self.default_browse_dir
         file, _ = QFileDialog.getOpenFileName(self, "选择CSV文件", initial_dir, "CSV Files (*.csv)")
@@ -484,20 +497,20 @@ class DataViewer(QWidget):
             self.last_browse_dir = os.path.dirname(file)
             self.save_config()
 
-    def browse_text_file(self, lineedit):
-        initial_dir = self.last_browse_dir if os.path.isdir(self.last_browse_dir) else self.default_browse_dir
+    def browse_cst_text_file(self, lineedit):
+        initial_dir = self.cst_last_browse_dir if os.path.isdir(self.cst_last_browse_dir) else self.cst_default_browse_dir
         file, _ = QFileDialog.getOpenFileName(self, "选择文本文件", initial_dir, "Text Files (*.txt);;All Files (*)")
         if file:
             lineedit.setText(file)
-            self.last_browse_dir = os.path.dirname(file)
+            self.cst_last_browse_dir = os.path.dirname(file)
             self.save_config()
 
-    def browse_output_dir(self):
-        initial_dir = self.last_browse_dir if os.path.isdir(self.last_browse_dir) else self.default_browse_dir
+    def browse_cst_output_dir(self):
+        initial_dir = self.cst_last_browse_dir if os.path.isdir(self.cst_last_browse_dir) else self.cst_default_browse_dir
         out_dir = QFileDialog.getExistingDirectory(self, "选择输出目录", initial_dir)
         if out_dir:
             self.cst_out_edit.setText(out_dir)
-            self.last_browse_dir = out_dir
+            self.cst_last_browse_dir = out_dir
             self.save_config()
 
     def save_config(self):
@@ -507,10 +520,12 @@ class DataViewer(QWidget):
             "yfile": self.yfile_edit.text(),
             "zfile": self.zfile_edit.text(),
             "last_browse_dir": self.last_browse_dir,
+            "cst_last_browse_dir": self.cst_last_browse_dir,
             "cst_e_file": self.cst_e_edit.text() if hasattr(self, "cst_e_edit") else "",
             "cst_h_file": self.cst_h_edit.text() if hasattr(self, "cst_h_edit") else "",
             "cst_out_dir": self.cst_out_edit.text() if hasattr(self, "cst_out_edit") else "",
-            "cst_freq_hz": self.cst_freq_edit.text() if hasattr(self, "cst_freq_edit") else ""
+            "cst_freq_hz": self.cst_freq_edit.text() if hasattr(self, "cst_freq_edit") else "",
+            "cst_freq_unit": self.cst_freq_unit_combo.currentText() if hasattr(self, "cst_freq_unit_combo") else "MHz",
         }
         with open(self.conf_file, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=4)
@@ -530,8 +545,12 @@ class DataViewer(QWidget):
                 self.cst_out_edit.setText(cfg.get("cst_out_dir", ""))
             if hasattr(self, "cst_freq_edit"):
                 self.cst_freq_edit.setText(cfg.get("cst_freq_hz", ""))
+            if hasattr(self, "cst_freq_unit_combo"):
+                self.cst_freq_unit_combo.setCurrentText(cfg.get("cst_freq_unit", "MHz"))
             saved_dir = cfg.get("last_browse_dir", self.default_browse_dir)
             self.last_browse_dir = saved_dir if os.path.isdir(saved_dir) else self.default_browse_dir
+            cst_saved_dir = cfg.get("cst_last_browse_dir", self.cst_default_browse_dir)
+            self.cst_last_browse_dir = cst_saved_dir if os.path.isdir(cst_saved_dir) else self.cst_default_browse_dir
 
     @staticmethod
     def _read_cst_field_file(file_path, expected_components):
@@ -599,16 +618,18 @@ class DataViewer(QWidget):
         e_path = self.cst_e_edit.text().strip()
         h_path = self.cst_h_edit.text().strip()
         freq_text = self.cst_freq_edit.text().strip()
+        freq_unit = self.cst_freq_unit_combo.currentText().strip() if hasattr(self, "cst_freq_unit_combo") else "Hz"
 
         if not e_path and not h_path:
             self.log("请至少选择 e.txt 或 h.txt 文件")
             return
         if not freq_text:
-            self.log("请输入频率(Hz)")
+            self.log(f"请输入频率({freq_unit})")
             return
 
         try:
-            freq_hz = float(freq_text)
+            freq_value = float(freq_text)
+            freq_hz = freq_value * self._get_frequency_unit_factor(freq_unit)
         except ValueError:
             self.log(f"频率格式错误: {freq_text}")
             return
@@ -642,11 +663,11 @@ class DataViewer(QWidget):
                     outputs.append(self._write_xml_file(output_dir, field_name, freq_hz))
 
             self.save_config()
-            self.log(f"CST 转换完成，输出目录: {output_dir}")
+            self.log(f"CST 导出转 CST 导入转换完成，输出目录: {output_dir}")
             for path in outputs:
                 self.log(f"  已生成: {path}")
         except Exception as e:
-            self.log(f"CST 转换失败: {e}")
+            self.log(f"CST 导出转 CST 导入转换失败: {e}")
 
     def load_all_data(self):
         self.data.clear()
