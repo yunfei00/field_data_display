@@ -41,6 +41,8 @@ class DataViewer(QWidget):
         self.default_colormap = "jet"
         self.current_plot_items = []
         self.standalone_figures = []
+        self.default_browse_dir = os.getcwd()
+        self.last_browse_dir = self.default_browse_dir
 
         self.tabs = QTabWidget()
         self.tab1 = QWidget()  # 数据加载
@@ -416,9 +418,11 @@ class DataViewer(QWidget):
         self.tab2.setLayout(layout)
 
     def browse_file(self, lineedit):
-        file, _ = QFileDialog.getOpenFileName(self, "选择CSV文件", "", "CSV Files (*.csv)")
+        initial_dir = self.last_browse_dir if os.path.isdir(self.last_browse_dir) else self.default_browse_dir
+        file, _ = QFileDialog.getOpenFileName(self, "选择CSV文件", initial_dir, "CSV Files (*.csv)")
         if file:
             lineedit.setText(file)
+            self.last_browse_dir = os.path.dirname(file)
             self.save_config()
 
     def save_config(self):
@@ -426,7 +430,8 @@ class DataViewer(QWidget):
         cfg = {
             "xfile": self.xfile_edit.text(),
             "yfile": self.yfile_edit.text(),
-            "zfile": self.zfile_edit.text()
+            "zfile": self.zfile_edit.text(),
+            "last_browse_dir": self.last_browse_dir
         }
         with open(self.conf_file, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=4)
@@ -438,6 +443,8 @@ class DataViewer(QWidget):
             self.xfile_edit.setText(cfg.get("xfile", ""))
             self.yfile_edit.setText(cfg.get("yfile", ""))
             self.zfile_edit.setText(cfg.get("zfile", ""))
+            saved_dir = cfg.get("last_browse_dir", self.default_browse_dir)
+            self.last_browse_dir = saved_dir if os.path.isdir(saved_dir) else self.default_browse_dir
 
     def load_all_data(self):
         self.data.clear()
