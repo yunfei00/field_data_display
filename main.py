@@ -297,10 +297,12 @@ class DataViewer(QWidget):
 
         return np.sqrt(np.sum(np.square(amp_matrix), axis=0))
 
-    def log(self, message):
-        """统一日志输出，兼容界面未完全初始化的阶段。"""
+    def log(self, message, target="tab1"):
+        """统一日志输出，支持按页面输出日志。"""
         text = str(message)
-        if hasattr(self, "log_box") and self.log_box is not None:
+        if target == "tab3" and hasattr(self, "cst_log_box") and self.cst_log_box is not None:
+            self.cst_log_box.append(text)
+        elif hasattr(self, "log_box") and self.log_box is not None:
             self.log_box.append(text)
         else:
             print(text)
@@ -486,6 +488,11 @@ class DataViewer(QWidget):
         self.cst_convert_btn.clicked.connect(self.convert_cst_to_cat)
         layout.addWidget(self.cst_convert_btn)
 
+        self.cst_log_box = QTextEdit()
+        self.cst_log_box.setReadOnly(True)
+        layout.addWidget(QLabel("日志:"))
+        layout.addWidget(self.cst_log_box)
+
         layout.addStretch()
         self.tab3.setLayout(layout)
 
@@ -621,17 +628,17 @@ class DataViewer(QWidget):
         freq_unit = self.cst_freq_unit_combo.currentText().strip() if hasattr(self, "cst_freq_unit_combo") else "Hz"
 
         if not e_path and not h_path:
-            self.log("请至少选择 e.txt 或 h.txt 文件")
+            self.log("请至少选择 e.txt 或 h.txt 文件", target="tab3")
             return
         if not freq_text:
-            self.log(f"请输入频率({freq_unit})")
+            self.log(f"请输入频率({freq_unit})", target="tab3")
             return
 
         try:
             freq_value = float(freq_text)
             freq_hz = freq_value * self._get_frequency_unit_factor(freq_unit)
         except ValueError:
-            self.log(f"频率格式错误: {freq_text}")
+            self.log(f"频率格式错误: {freq_text}", target="tab3")
             return
 
         output_dir = self.cst_out_edit.text().strip()
@@ -663,11 +670,11 @@ class DataViewer(QWidget):
                     outputs.append(self._write_xml_file(output_dir, field_name, freq_hz))
 
             self.save_config()
-            self.log(f"CST 导出转 CST 导入转换完成，输出目录: {output_dir}")
+            self.log(f"CST 导出转 CST 导入转换完成，输出目录: {output_dir}", target="tab3")
             for path in outputs:
-                self.log(f"  已生成: {path}")
+                self.log(f"  已生成: {path}", target="tab3")
         except Exception as e:
-            self.log(f"CST 导出转 CST 导入转换失败: {e}")
+            self.log(f"CST 导出转 CST 导入转换失败: {e}", target="tab3")
 
     def load_all_data(self):
         self.data.clear()
