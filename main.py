@@ -491,9 +491,7 @@ class DataViewer(QWidget):
         self.cst_log_box = QTextEdit()
         self.cst_log_box.setReadOnly(True)
         layout.addWidget(QLabel("日志:"))
-        layout.addWidget(self.cst_log_box)
-
-        layout.addStretch()
+        layout.addWidget(self.cst_log_box, 1)
         self.tab3.setLayout(layout)
 
     def browse_file(self, lineedit):
